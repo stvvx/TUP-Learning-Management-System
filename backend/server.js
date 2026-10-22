@@ -1253,7 +1253,9 @@ async function start() {
   try {
     await assignmentsCollection.dropIndex('facultyId_1_subjectId_1');
   } catch (error) {
-    if (error.codeName !== 'IndexNotFound') throw error;
+    if (error.codeName !== 'IndexNotFound' && error.codeName !== 'NamespaceNotFound') {
+      throw error;
+    }
   }
   await assignmentsCollection.createIndex({ facultyId: 1, subjectId: 1, sectionId: 1 }, { unique: true });
   await studentsCollection.createIndex({ userId: 1 }, { unique: true });

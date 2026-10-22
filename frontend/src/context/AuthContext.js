@@ -72,9 +72,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await clearAuthData();
     setToken(null);
     setUser(null);
+    await clearAuthData();
   }, []);
 
   const refreshUser = useCallback(async () => {

@@ -16,17 +16,15 @@ export default function AuthInput({
   containerStyle,
   ...rest
 }) {
-  const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={styles.label}>{label}</Text>}
-      
+
       <View
         style={[
           styles.inputContainer,
-          isFocused && styles.inputFocused,
           error ? styles.inputError : null
         ]}
       >
@@ -34,7 +32,7 @@ export default function AuthInput({
           <Ionicons
             name={icon}
             size={20}
-            color={error ? '#EF4444' : isFocused ? '#2563EB' : '#94A3B8'}
+            color={error ? '#EF4444' : '#94A3B8'}
             style={styles.icon}
           />
         )}
@@ -49,8 +47,12 @@ export default function AuthInput({
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoCorrect={autoCorrect}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          returnKeyType="done"
+          blurOnSubmit={true}
+          selectionColor="#2563EB"
+          textAlignVertical="center"
+          importantForAutofill="yes"
+          autoComplete="off"
           {...rest}
         />
 

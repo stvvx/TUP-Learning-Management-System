@@ -3,9 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   TouchableOpacity,
   Alert
 } from 'react-native';
@@ -25,6 +22,7 @@ export default function LoginScreen({ onNavigate }) {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [networkWarning, setNetworkWarning] = useState('');
 
   const navigateTo = (route) => {
     if (onNavigate) {
@@ -62,6 +60,7 @@ export default function LoginScreen({ onNavigate }) {
 
   const handleLogin = async () => {
     setServerError('');
+    setNetworkWarning('');
     if (!validate()) return;
 
     setIsSubmitting(true);
@@ -70,7 +69,11 @@ export default function LoginScreen({ onNavigate }) {
       replaceTo('/dashboard');
     } catch (err) {
       console.log('Login failed:', err);
-      setServerError(err.message || 'Login failed. Please check your credentials.');
+      const message = err?.isNetworkError || err?.message?.includes('connect')
+        ? 'Unable to reach the server. Please start the backend and try again.'
+        : err.message || 'Login failed. Please check your credentials.';
+      setServerError(message);
+      setNetworkWarning(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -85,18 +88,7 @@ export default function LoginScreen({ onNavigate }) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-        showsVerticalScrollIndicator={false}
-        automaticallyAdjustKeyboardInsets
-      >
+    <View style={styles.keyboardContainer}>
         {/* Brand Header */}
         <View style={styles.header}>
           <View style={styles.badgeContainer}>
@@ -116,10 +108,10 @@ export default function LoginScreen({ onNavigate }) {
         </View>
 
         {/* Server Error Alert */}
-        {serverError ? (
+        {(serverError || networkWarning) ? (
           <View style={styles.errorBanner}>
             <Ionicons name="alert-circle" size={20} color="#DC2626" style={styles.errorIcon} />
-            <Text style={styles.errorBannerText}>{serverError}</Text>
+            <Text style={styles.errorBannerText}>{serverError || networkWarning}</Text>
           </View>
         ) : null}
 
@@ -181,8 +173,7 @@ export default function LoginScreen({ onNavigate }) {
           <Ionicons name="server-outline" size={13} color="#94A3B8" />
           <Text style={styles.envText}>Connected to: {API_BASE_URL}</Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -195,8 +186,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 48,
-    paddingBottom: 32,
-    justifyContent: 'center'
+    paddingBottom: 32
   },
   header: {
     marginBottom: 24

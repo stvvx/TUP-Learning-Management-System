@@ -29,15 +29,26 @@ export default function DashboardScreen({ onNavigate }) {
 
   useEffect(() => {
     if (!token || user?.role !== 'student') return undefined;
+
+    let isActive = true;
+
     const loadStats = async () => {
       try {
-        setStats(await apiGetDashboardStats(token));
+        const nextStats = await apiGetDashboardStats(token);
+        if (!isActive) return;
+        setStats(nextStats);
       } catch (error) {
+        if (!isActive) return;
         console.error('Failed to load student dashboard statistics:', error);
       }
     };
+
     const timer = setTimeout(loadStats, 0);
-    return () => clearTimeout(timer);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timer);
+    };
   }, [token, user?.role]);
 
   const performLogout = async () => {
@@ -185,24 +196,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC'
   },
   contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 48,
+    paddingHorizontal: 16,
+    paddingTop: 32,
     paddingBottom: 40
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24
+    marginBottom: 20
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10
+    gap: 10,
+    flex: 1,
+    paddingRight: 8
   },
   brandIcon: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
@@ -211,9 +224,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   brandTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
-    color: '#0F172A'
+    color: '#0F172A',
+    flexShrink: 1,
+    lineHeight: 18
   },
   refreshButton: {
     width: 36,
@@ -226,8 +241,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     padding: 16,
@@ -247,7 +262,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14
+    marginBottom: 12
   },
   avatarText: {
     color: '#FFFFFF',

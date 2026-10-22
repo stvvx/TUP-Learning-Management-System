@@ -1,34 +1,87 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import * as Network from 'expo-network';
 
 const TOKEN_KEY = '@itproflms_token';
 const USER_KEY = '@itproflms_user';
 
-// Determine the default base URL based on platform
-const getBaseUrl = () => {
+const getExpoDeviceHost = () => {
+  const candidates = [
+    Constants.expoConfig?.hostUri,
+    Constants.expoGoConfig?.hostUri,
+    Constants.manifest?.debuggerHost,
+    Constants.manifest2?.debuggerHost,
+    Constants.expoConfig?.debuggerHost,
+    Constants.expoGoConfig?.debuggerHost
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'string') continue;
+
+    const host = candidate.split(':')[0].trim();
+    if (!host || host === 'localhost' || host === '127.0.0.1') continue;
+
+    return host;
+  }
+
+  return null;
+};
+
+const getBaseUrlSync = () => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.trim().length > 0) {
-    // If running in Android emulator and URL is localhost, replace with 10.0.2.2
-    if (Platform.OS === 'android' && envUrl.includes('localhost')) {
-      return envUrl.replace('localhost', '10.0.2.2');
-    }
     return envUrl.trim();
   }
-  // Default fallbacks
-  if (Platform.OS === 'android') {
+
+  const deviceHost = getExpoDeviceHost();
+  if (deviceHost) {
+    return `http://${deviceHost}:3000`;
+  }
+
+  if (Platform.OS === 'android' && !Constants.isDevice) {
     return 'http://10.0.2.2:3000';
   }
+
   return 'http://localhost:3000';
 };
 
-export const API_BASE_URL = getBaseUrl();
+const getBaseUrl = async () => {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && envUrl.trim().length > 0) {
+    return envUrl.trim();
+  }
+
+  const deviceHost = getExpoDeviceHost();
+  if (deviceHost) {
+    return `http://${deviceHost}:3000`;
+  }
+
+  if (Platform.OS === 'android' && !Constants.isDevice) {
+    return 'http://10.0.2.2:3000';
+  }
+
+  try {
+    const ip = await Network.getIpAddressAsync();
+    if (ip && !ip.startsWith('127.')) {
+      return `http://${ip}:3000`;
+    }
+  } catch (error) {
+    console.warn('Unable to resolve device IP for API base URL:', error);
+  }
+
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
+export const API_BASE_URL = getBaseUrlSync();
 
 /**
  * Helper to handle fetch responses and parse errors
  */
 async function request(endpoint, options = {}) {
-  const url = `${API_BASE_URL}${endpoint}`;
-  
+  const baseUrl = await getBaseUrl();
+  const url = `${baseUrl}${endpoint}`;
+
   const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';

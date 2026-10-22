@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
   Image,
@@ -34,6 +33,7 @@ export default function RegisterScreen({ onNavigate }) {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [networkWarning, setNetworkWarning] = useState('');
 
   // Fetch available programs from the database
   useEffect(() => {
@@ -41,12 +41,20 @@ export default function RegisterScreen({ onNavigate }) {
     async function loadPrograms() {
       try {
         setLoadingPrograms(true);
+        setNetworkWarning('');
         const data = await apiGetPrograms();
         if (isMounted && Array.isArray(data)) {
           setProgramsList(data);
         }
       } catch (err) {
         console.warn('Failed to load programs for registration dropdown:', err);
+        if (isMounted) {
+          setNetworkWarning(
+            err?.isNetworkError || err?.message?.includes('connect')
+              ? 'Unable to reach the server. Please start the backend and try again.'
+              : 'Unable to load programs right now. Please try again later.'
+          );
+        }
       } finally {
         if (isMounted) {
           setLoadingPrograms(false);
@@ -190,18 +198,14 @@ export default function RegisterScreen({ onNavigate }) {
   };
 
   return (
-    <KeyboardAvoidingView
+    <ScrollView
       style={styles.keyboardContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="none"
+      showsVerticalScrollIndicator={false}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-        showsVerticalScrollIndicator={false}
-        automaticallyAdjustKeyboardInsets
-      >
+      <View style={styles.contentWrap}>
         {/* Back Button */}
         <TouchableOpacity
           onPress={goBack}
@@ -221,10 +225,10 @@ export default function RegisterScreen({ onNavigate }) {
         </View>
 
         {/* Server Error Alert */}
-        {serverError ? (
+        {serverError || networkWarning ? (
           <View style={styles.errorBanner}>
             <Ionicons name="alert-circle" size={20} color="#DC2626" style={styles.errorIcon} />
-            <Text style={styles.errorBannerText}>{serverError}</Text>
+            <Text style={styles.errorBannerText}>{serverError || networkWarning}</Text>
           </View>
         ) : null}
 
@@ -355,8 +359,8 @@ export default function RegisterScreen({ onNavigate }) {
           <Ionicons name="server-outline" size={13} color="#94A3B8" />
           <Text style={styles.envText}>Connected to: {API_BASE_URL}</Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -367,9 +371,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 36,
+    paddingHorizontal: 16,
+    paddingTop: 28,
     paddingBottom: 32
+  },
+  contentWrap: {
+    width: '100%'
   },
   backButton: {
     width: 40,
@@ -419,7 +426,7 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#0F172A',
