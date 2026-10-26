@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import StudentHeader from './StudentHeader';
 
-export default function StudentPage({ activeRoute, title, icon, message }) {
+export default function StudentPage({ activeRoute, title, icon, message, children }) {
   const router = useRouter();
   const { user, isLoading } = useAuth();
 
@@ -28,11 +28,18 @@ export default function StudentPage({ activeRoute, title, icon, message }) {
         <Text style={styles.brandTitle}>Technological University of the Philippines - Taguig</Text>
       </View>
       <StudentHeader activeRoute={activeRoute} />
-      <View style={styles.content}>
-        <Ionicons name={icon} size={38} color="#94A3B8" />
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.message}>{message}</Text>
-      </View>
+      {children ? (
+        <View style={styles.contentWithChildren}>
+          <Text style={styles.title}>{title}</Text>
+          {children}
+        </View>
+      ) : (
+        <View style={styles.content}>
+          <Ionicons name={icon} size={38} color="#94A3B8" />
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.message}>{message}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -70,6 +77,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 80
+  },
+  contentWithChildren: {
+    flex: 1,
+    paddingBottom: 20
   },
   title: {
     marginTop: 14,

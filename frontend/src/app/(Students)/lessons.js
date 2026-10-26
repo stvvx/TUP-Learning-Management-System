@@ -34,6 +34,7 @@ function TeachingLessonsScreen() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [viewingLesson, setViewingLesson] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -198,12 +199,14 @@ function TeachingLessonsScreen() {
         <View key={lesson.id} style={styles.item}>
           <Text style={styles.itemTitle}>{lesson.title}</Text>
           <Text style={styles.itemText}>{subjects.find((subject) => subject.id === lesson.subjectId)?.code || 'Assigned subject'} · {lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} slide(s)`}</Text>
+          <AuthButton title="View lesson" variant="outline" onPress={() => setViewingLesson(lesson)} />
           <View style={styles.actions}>
             <AuthButton title="Edit" variant="outline" onPress={() => editLesson(lesson)} style={styles.actionButton} />
             <AuthButton title="Delete" variant="outline" onPress={() => deleteLesson(lesson)} style={[styles.actionButton, styles.deleteButton]} textStyle={styles.deleteText} />
           </View>
         </View>
       ))}
+      <LessonViewer lesson={viewingLesson} onClose={() => setViewingLesson(null)} />
     </ScrollView>
   );
 }
@@ -212,6 +215,7 @@ function StudentLessonsScreen() {
   const { token, isLoading } = useAuth();
   const [lessons, setLessons] = useState([]);
   const [error, setError] = useState('');
+  const [viewingLesson, setViewingLesson] = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -232,19 +236,48 @@ function StudentLessonsScreen() {
           <Text style={styles.itemTitle}>{lesson.title}</Text>
           <Text style={styles.itemText}>{lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} slide(s)`}</Text>
           {lesson.description ? <Text style={styles.itemText}>{lesson.description}</Text> : null}
-          {lesson.fileUrl ? (
-            <TouchableOpacity onPress={() => Linking.openURL(`${API_BASE_URL}${lesson.fileUrl}`)}>
-              <Text style={styles.link}>Open uploaded lesson</Text>
-            </TouchableOpacity>
-          ) : lesson.slides.map((slide, index) => (
-            <View key={index} style={styles.slidePreview}>
-              <Text style={styles.slideLabel}>{slide.title || `Slide ${index + 1}`}</Text>
-              <Text style={styles.itemText}>{slide.body}</Text>
-            </View>
-          ))}
+          <AuthButton title="View lesson" variant="outline" onPress={() => setViewingLesson(lesson)} />
         </View>
       ))}
+      <LessonViewer lesson={viewingLesson} onClose={() => setViewingLesson(null)} />
     </ScrollView>
+  );
+}
+
+function LessonViewer({ lesson, onClose }) {
+  if (!lesson) return null;
+
+  return (
+    <View style={styles.viewer}>
+      <View style={styles.viewerHeader}>
+        <View style={styles.viewerTitleContainer}>
+          <Text style={styles.viewerTitle}>{lesson.title}</Text>
+          <Text style={styles.itemText}>
+            {lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} lesson slide(s)`}
+          </Text>
+        </View>
+        <TouchableOpacity accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
+          <Text style={styles.closeText}>Close</Text>
+        </TouchableOpacity>
+      </View>
+      {lesson.description ? <Text style={styles.viewerDescription}>{lesson.description}</Text> : null}
+      {lesson.fileUrl ? (
+        <View style={styles.fileViewer}>
+          <Text style={styles.fileViewerText}>This lesson is an uploaded {lesson.fileName?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'PPTX'} file.</Text>
+          <TouchableOpacity onPress={() => Linking.openURL(`${API_BASE_URL}${lesson.fileUrl}`)}>
+            <Text style={styles.link}>Open uploaded lesson</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        lesson.slides.map((slide, index) => (
+          <View key={index} style={styles.slideViewer}>
+            <Text style={styles.slideNumber}>Slide {index + 1}</Text>
+            <Text style={styles.slideLabel}>{slide.title || `Slide ${index + 1}`}</Text>
+            {slide.body ? <Text style={styles.slideBody}>{slide.body}</Text> : null}
+          </View>
+        ))
+      )}
+    </View>
   );
 }
 
@@ -270,5 +303,17 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1 },
   deleteButton: { borderColor: '#FCA5A5' },
   deleteText: { color: '#DC2626' },
-  slidePreview: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 8, marginTop: 8 }
+  slidePreview: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 8, marginTop: 8 },
+  viewer: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#93C5FD', marginTop: 12 },
+  viewerHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  viewerTitleContainer: { flex: 1 },
+  viewerTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
+  closeButton: { paddingVertical: 4, paddingHorizontal: 2 },
+  closeText: { color: '#2563EB', fontWeight: '700' },
+  viewerDescription: { color: '#475569', fontSize: 14, lineHeight: 21, marginTop: 12 },
+  fileViewer: { backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginTop: 12 },
+  fileViewerText: { color: '#1E3A8A', fontSize: 13, lineHeight: 19 },
+  slideViewer: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 14, marginTop: 14 },
+  slideNumber: { color: '#2563EB', fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  slideBody: { color: '#334155', fontSize: 15, lineHeight: 23, marginTop: 8 }
 });

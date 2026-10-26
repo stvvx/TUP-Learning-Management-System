@@ -64,6 +64,8 @@ let subjectsCollection;
 let enrollmentsCollection;
 let assignmentsCollection;
 let lessonsCollection;
+let quizzesCollection;
+let quizSubmissionsCollection;
 let studentsCollection;
 let facultyCollection;
 let programChairsCollection;
@@ -130,6 +132,24 @@ function serializeLesson(lesson) {
     slides: lesson.slides || [],
     createdAt: lesson.createdAt,
     updatedAt: lesson.updatedAt
+  };
+}
+
+function serializeQuiz(quiz, includeAnswers = false) {
+  return {
+    id: quiz._id.toString(),
+    subjectId: quiz.subjectId.toString(),
+    subjectCode: quiz.subjectCode || null,
+    sectionName: quiz.sectionName || null,
+    title: quiz.title,
+    description: quiz.description || '',
+    questions: quiz.questions.map((question) => ({
+      question: question.question,
+      options: question.options,
+      ...(includeAnswers ? { correctOption: question.correctOption } : {})
+    })),
+    createdAt: quiz.createdAt,
+    updatedAt: quiz.updatedAt
   };
 }
 
@@ -792,9 +812,9 @@ app.post('/api/program-chair/assignments', authenticateToken, requireProgramChai
   }
 });
 
-async function getTeachingAssignments(userId) {
+async function getTeachingAssignments(userId, role = 'faculty') {
   const assignments = await assignmentsCollection
-    .find({ facultyId: new ObjectId(userId) })
+    .find(role === 'program_chair' ? {} : { facultyId: new ObjectId(userId) })
     .sort({ createdAt: -1 })
     .toArray();
   if (assignments.length === 0) return [];
@@ -826,16 +846,17 @@ async function getTeachingAssignments(userId) {
     .filter(Boolean);
 }
 
-async function hasTeachingAssignment(userId, subjectId) {
-  return assignmentsCollection.findOne({
-    facultyId: new ObjectId(userId),
+async function hasTeachingAssignment(userId, subjectId, role = 'faculty') {
+  const query = {
     subjectId: new ObjectId(subjectId)
-  });
+  };
+  if (role !== 'program_chair') query.facultyId = new ObjectId(userId);
+  return assignmentsCollection.findOne(query);
 }
 
 app.get('/api/teaching/subjects', authenticateToken, requireTeachingStaff, async (req, res) => {
   try {
-    return res.json({ subjects: await getTeachingAssignments(req.user.userId) });
+    return res.json({ subjects: await getTeachingAssignments(req.user.userId, req.user.role) });
   } catch (error) {
     console.error('Error fetching teaching subjects:', error);
     return res.status(500).json({ error: 'Failed to fetch assigned subjects.' });
@@ -853,6 +874,96 @@ app.get('/api/teaching/lessons', authenticateToken, requireTeachingStaff, async 
   } catch (error) {
     console.error('Error fetching teaching lessons:', error);
     return res.status(500).json({ error: 'Failed to fetch lessons.' });
+  }
+});
+
+app.get('/api/teaching/quizzes', authenticateToken, requireTeachingStaff, async (req, res) => {
+  try {
+    const assignments = await getTeachingAssignments(req.user.userId, req.user.role);
+    const subjectIds = assignments.map((subject) => new ObjectId(subject.id));
+    const quizzes = subjectIds.length
+      ? await quizzesCollection.find({ subjectId: { $in: subjectIds } }).sort({ updatedAt: -1 }).toArray()
+      : [];
+    const assignmentBySubject = new Map(assignments.map((subject) => [subject.id, subject]));
+    return res.json({
+      quizzes: quizzes.map((quiz) => {
+        const assignment = assignmentBySubject.get(quiz.subjectId.toString());
+        return serializeQuiz({
+          ...quiz,
+          subjectCode: assignment?.code,
+          sectionName: assignment?.sectionName
+        }, true);
+      })
+    });
+  } catch (error) {
+    console.error('Error fetching teaching quizzes:', error);
+    return res.status(500).json({ error: 'Failed to fetch quizzes.' });
+  }
+});
+
+app.post('/api/teaching/quizzes', authenticateToken, requireTeachingStaff, async (req, res) => {
+  try {
+    const { subjectId, title, description, questions } = req.body;
+    if (!ObjectId.isValid(subjectId) || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'A valid subject and quiz title are required.' });
+    }
+    if (!Array.isArray(questions) || questions.length < 10 || questions.length > 20) {
+      return res.status(400).json({ error: 'A quiz must contain between 10 and 20 questions.' });
+    }
+    if (!await hasTeachingAssignment(req.user.userId, subjectId, req.user.role)) {
+      return res.status(403).json({ error: 'You can only create quizzes for assigned subjects.' });
+    }
+
+    const normalizedQuestions = questions.map((question) => ({
+      question: typeof question?.question === 'string' ? question.question.trim() : '',
+      options: Array.isArray(question?.options)
+        ? question.options.map((option) => typeof option === 'string' ? option.trim() : '')
+        : [],
+      correctOption: question?.correctOption
+    }));
+    const invalidQuestion = normalizedQuestions.some((question) =>
+      !question.question ||
+      question.options.length !== 4 ||
+      question.options.some((option) => !option) ||
+      !Number.isInteger(question.correctOption) ||
+      question.correctOption < 0 ||
+      question.correctOption > 3
+    );
+    if (invalidQuestion) {
+      return res.status(400).json({
+        error: 'Each question needs text, exactly four non-empty options, and a valid correct answer.'
+      });
+    }
+
+    const assignmentQuery = { subjectId: new ObjectId(subjectId) };
+    if (req.user.role !== 'program_chair') {
+      assignmentQuery.facultyId = new ObjectId(req.user.userId);
+    }
+    const assignment = await assignmentsCollection.findOne(assignmentQuery);
+    const subject = await subjectsCollection.findOne({ _id: new ObjectId(subjectId) });
+    const section = assignment ? await sectionsCollection.findOne({ _id: assignment.sectionId }) : null;
+    const now = new Date();
+    const quiz = {
+      subjectId: new ObjectId(subjectId),
+      title: title.trim(),
+      description: typeof description === 'string' ? description.trim() : '',
+      questions: normalizedQuestions,
+      createdBy: new ObjectId(req.user.userId),
+      createdAt: now,
+      updatedAt: now
+    };
+    const result = await quizzesCollection.insertOne(quiz);
+    return res.status(201).json({
+      quiz: serializeQuiz({
+        ...quiz,
+        _id: result.insertedId,
+        subjectCode: subject?.code,
+        sectionName: section?.name
+      }, true)
+    });
+  } catch (error) {
+    console.error('Error creating quiz:', error);
+    return res.status(500).json({ error: 'Failed to create quiz.' });
   }
 });
 
@@ -1040,6 +1151,82 @@ app.get('/api/student/lessons', authenticateToken, requireStudent, async (req, r
   } catch (error) {
     console.error('Error fetching student lessons:', error);
     return res.status(500).json({ error: 'Failed to fetch lessons.' });
+  }
+});
+
+app.get('/api/student/quizzes', authenticateToken, requireStudent, async (req, res) => {
+  try {
+    const enrollments = await enrollmentsCollection.find({ studentId: new ObjectId(req.user.userId) }).toArray();
+    const subjectIds = enrollments.map((enrollment) => enrollment.subjectId);
+    const quizzes = subjectIds.length
+      ? await quizzesCollection.find({ subjectId: { $in: subjectIds } }).sort({ updatedAt: -1 }).toArray()
+      : [];
+    const subjects = subjectIds.length
+      ? await subjectsCollection.find({ _id: { $in: subjectIds } }).toArray()
+      : [];
+    const subjectsById = new Map(subjects.map((subject) => [subject._id.toString(), subject]));
+    return res.json({
+      quizzes: quizzes.map((quiz) => serializeQuiz({
+        ...quiz,
+        subjectCode: subjectsById.get(quiz.subjectId.toString())?.code
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching student quizzes:', error);
+    return res.status(500).json({ error: 'Failed to fetch quizzes.' });
+  }
+});
+
+app.post('/api/student/quizzes/:quizId/submit', authenticateToken, requireStudent, async (req, res) => {
+  try {
+    if (!ObjectId.isValid(req.params.quizId)) {
+      return res.status(400).json({ error: 'Valid quiz is required.' });
+    }
+    const quizId = new ObjectId(req.params.quizId);
+    const quiz = await quizzesCollection.findOne({ _id: quizId });
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
+
+    const enrollment = await enrollmentsCollection.findOne({
+      studentId: new ObjectId(req.user.userId),
+      subjectId: quiz.subjectId
+    });
+    if (!enrollment) {
+      return res.status(403).json({ error: 'You can only submit quizzes for enrolled subjects.' });
+    }
+
+    const { answers } = req.body;
+    if (!Array.isArray(answers) || answers.length !== quiz.questions.length) {
+      return res.status(400).json({ error: 'Please answer every question before submitting.' });
+    }
+    const invalidAnswer = answers.some((answer) =>
+      !Number.isInteger(answer) || answer < 0 || answer > 3
+    );
+    if (invalidAnswer) {
+      return res.status(400).json({ error: 'Each answer must be a valid multiple-choice option.' });
+    }
+
+    const score = answers.reduce((total, answer, index) =>
+      total + (answer === quiz.questions[index].correctOption ? 1 : 0), 0);
+    const total = quiz.questions.length;
+    const percentage = Math.round((score / total) * 100);
+    const submission = {
+      quizId,
+      studentId: new ObjectId(req.user.userId),
+      answers,
+      score,
+      total,
+      percentage,
+      submittedAt: new Date()
+    };
+    await quizSubmissionsCollection.replaceOne(
+      { quizId, studentId: new ObjectId(req.user.userId) },
+      submission,
+      { upsert: true }
+    );
+    return res.json({ result: { score, total, percentage, submittedAt: submission.submittedAt } });
+  } catch (error) {
+    console.error('Error submitting quiz:', error);
+    return res.status(500).json({ error: 'Failed to submit quiz.' });
   }
 });
 
@@ -1239,6 +1426,8 @@ async function start() {
   enrollmentsCollection = database.collection('enrollments');
   assignmentsCollection = database.collection('subjectAssignments');
   lessonsCollection = database.collection('lessons');
+  quizzesCollection = database.collection('quizzes');
+  quizSubmissionsCollection = database.collection('quizSubmissions');
   studentsCollection = database.collection('students');
   facultyCollection = database.collection('faculty');
   programChairsCollection = database.collection('programChairs');
@@ -1258,6 +1447,8 @@ async function start() {
     }
   }
   await assignmentsCollection.createIndex({ facultyId: 1, subjectId: 1, sectionId: 1 }, { unique: true });
+  await quizzesCollection.createIndex({ subjectId: 1, updatedAt: -1 });
+  await quizSubmissionsCollection.createIndex({ quizId: 1, studentId: 1 }, { unique: true });
   await studentsCollection.createIndex({ userId: 1 }, { unique: true });
   await facultyCollection.createIndex({ userId: 1 }, { unique: true });
   await programChairsCollection.createIndex({ userId: 1 }, { unique: true });

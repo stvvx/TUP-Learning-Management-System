@@ -273,11 +273,43 @@ export async function apiGetTeachingLessons(token) {
   return result.lessons;
 }
 
+export async function apiGetTeachingQuizzes(token) {
+  const result = await request('/api/teaching/quizzes', {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return result.quizzes;
+}
+
+export async function apiCreateQuiz(token, quiz) {
+  const result = await request('/api/teaching/quizzes', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify(quiz)
+  });
+  return result.quiz;
+}
+
 export async function apiGetStudentLessons(token) {
   const result = await request('/api/student/lessons', {
     headers: { Authorization: 'Bearer ' + token }
   });
   return result.lessons;
+}
+
+export async function apiGetStudentQuizzes(token) {
+  const result = await request('/api/student/quizzes', {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return result.quizzes;
+}
+
+export async function apiSubmitQuiz(token, quizId, answers) {
+  const result = await request(`/api/student/quizzes/${quizId}/submit`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ answers })
+  });
+  return result.result;
 }
 
 export async function apiCreateLesson(token, lesson) {
