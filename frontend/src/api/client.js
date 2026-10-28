@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Network from 'expo-network';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const TOKEN_KEY = '@itproflms_token';
 const USER_KEY = '@itproflms_user';
@@ -28,10 +29,24 @@ const getExpoDeviceHost = () => {
   return null;
 };
 
+const getWebHost = () => {
+  if (typeof window === 'undefined' || !window.location) return null;
+
+  const host = window.location.hostname;
+  if (!host || host === 'localhost' || host === '127.0.0.1') return null;
+
+  return host;
+};
+
 const getBaseUrlSync = () => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.trim().length > 0) {
     return envUrl.trim();
+  }
+
+  const webHost = getWebHost();
+  if (webHost) {
+    return `http://${webHost}:3000`;
   }
 
   const deviceHost = getExpoDeviceHost();
@@ -52,13 +67,14 @@ const getBaseUrl = async () => {
     return envUrl.trim();
   }
 
+  const webHost = getWebHost();
+  if (webHost) {
+    return `http://${webHost}:3000`;
+  }
+
   const deviceHost = getExpoDeviceHost();
   if (deviceHost) {
     return `http://${deviceHost}:3000`;
-  }
-
-  if (Platform.OS === 'android' && !Constants.isDevice) {
-    return 'http://10.0.2.2:3000';
   }
 
   try {
@@ -70,7 +86,11 @@ const getBaseUrl = async () => {
     console.warn('Unable to resolve device IP for API base URL:', error);
   }
 
-  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+  if (Platform.OS === 'android' && !Constants.isDevice) {
+    return 'http://10.0.2.2:3000';
+  }
+
+  return 'http://localhost:3000';
 };
 
 export const API_BASE_URL = getBaseUrlSync();
@@ -289,6 +309,13 @@ export async function apiCreateQuiz(token, quiz) {
   return result.quiz;
 }
 
+export async function apiGetQuizSubmissions(token, quizId) {
+  const result = await request(`/api/teaching/quizzes/${quizId}/submissions`, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return result.submissions;
+}
+
 export async function apiGetStudentLessons(token) {
   const result = await request('/api/student/lessons', {
     headers: { Authorization: 'Bearer ' + token }
@@ -321,18 +348,93 @@ export async function apiCreateLesson(token, lesson) {
   return result.lesson;
 }
 
-export async function apiUploadLesson(token, { subjectId, title, description, file }) {
-  const formData = new FormData();
-  formData.append('subjectId', subjectId);
-  formData.append('title', title);
-  formData.append('description', description || '');
-  formData.append('file', file);
-  const result = await request('/api/teaching/lessons/upload', {
+function normalizeUploadFile(file) {
+  if (!file) return null;
+
+  const rawUri = file.uri || file.file?.uri || file.copyUri || null;
+  if (!rawUri) return null;
+
+  const fileName = file.name || file.file?.name || file.filename || 'lesson.pdf';
+  const mimeType = file.type || file.mimeType || file.file?.type || file.file?.mimeType || 'application/pdf';
+
+  return {
+    uri: rawUri,
+    name: fileName,
+    type: mimeType
+  };
+}
+
+function getSafeLessonFileName(fileName, fallback = 'lesson.pdf') {
+  const candidate = (fileName || fallback).split('/').pop();
+  return candidate && candidate.trim() ? candidate : fallback;
+}
+
+async function readFileAsBase64(fileUri, fileName) {
+  if (!fileUri) {
+    throw new Error('No readable file URI was provided.');
+  }
+
+  const extension = (getSafeLessonFileName(fileName, 'lesson.pdf').split('.').pop() || 'pdf').toLowerCase();
+  const cacheName = `lesson-${Date.now()}.${extension}`;
+  const cacheUri = `${FileSystem.cacheDirectory}${cacheName}`;
+
+  try {
+    const info = await FileSystem.getInfoAsync(fileUri);
+    if (!info.exists) {
+      throw new Error('Selected file is not available on this device.');
+    }
+
+    await FileSystem.copyAsync({
+      from: fileUri,
+      to: cacheUri
+    });
+
+    return await FileSystem.readAsStringAsync(cacheUri, {
+      encoding: FileSystem.EncodingType.Base64
+    });
+  } catch (_cacheError) {
+    try {
+      return await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+    } catch (_readError) {
+      const response = await fetch(fileUri);
+      const arrayBuffer = await response.arrayBuffer();
+      let binary = '';
+      const bytes = new Uint8Array(arrayBuffer);
+      bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+      });
+      return `data:${response.headers.get('content-type') || 'application/octet-stream'};base64,${btoa(binary)}`.replace(/^data:.*;base64,/, '');
+    }
+  }
+}
+
+async function uploadLessonPayload(token, endpoint, payload) {
+  const result = await request(endpoint, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + token },
-    body: formData
+    body: JSON.stringify(payload)
   });
   return result.lesson;
+}
+
+export async function apiUploadLesson(token, { subjectId, title, description, file }) {
+  const normalizedFile = normalizeUploadFile(file);
+  if (!normalizedFile || !normalizedFile.uri) {
+    return apiCreateLesson(token, { subjectId, title, description, slides: [] });
+  }
+
+  const base64 = await readFileAsBase64(normalizedFile.uri, normalizedFile.name);
+
+  return uploadLessonPayload(token, '/api/teaching/lessons/upload-base64', {
+    subjectId,
+    title,
+    description: description || '',
+    fileName: getSafeLessonFileName(normalizedFile.name, 'lesson.pdf'),
+    mimeType: normalizedFile.type || normalizedFile.mimeType || 'application/pdf',
+    base64
+  });
 }
 
 export async function apiUpdateLesson(token, lessonId, lesson) {
@@ -345,12 +447,21 @@ export async function apiUpdateLesson(token, lessonId, lesson) {
 }
 
 export async function apiReplaceLessonFile(token, lessonId, file) {
-  const formData = new FormData();
-  formData.append('file', file);
-  const result = await request(`/api/teaching/lessons/${lessonId}/upload`, {
+  const normalizedFile = normalizeUploadFile(file);
+  if (!normalizedFile || !normalizedFile.uri) {
+    return apiUpdateLesson(token, lessonId, { title: '', description: '' });
+  }
+
+  const base64 = await readFileAsBase64(normalizedFile.uri, normalizedFile.name);
+
+  const result = await request(`/api/teaching/lessons/${lessonId}/upload-base64`, {
     method: 'PATCH',
     headers: { Authorization: 'Bearer ' + token },
-    body: formData
+    body: JSON.stringify({
+      fileName: getSafeLessonFileName(normalizedFile.name, 'lesson.pdf'),
+      mimeType: normalizedFile.type || normalizedFile.mimeType || 'application/pdf',
+      base64
+    })
   });
   return result.lesson;
 }

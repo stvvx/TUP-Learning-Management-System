@@ -5,11 +5,11 @@ import { useAuth } from '../../context/AuthContext';
 import AuthButton from '../../components/AuthButton';
 import DropdownSelect from '../../components/DropdownSelect';
 import StaffHeader from '../../components/StaffHeader';
-import { apiGetProgramChairAcademic } from '../../api/client';
 import {
+  apiGetProgramChairAcademic,
   apiGetProgramChairStudents,
   apiUpdateProgramChairStudentPlacement
-} from '../../api/programChairStudents';
+} from '../../api/client';
 
 const YEAR_LEVEL_OPTIONS = [
   { label: 'First Year', value: 'First Year' },
@@ -163,15 +163,18 @@ export default function PcStudentsScreen() {
         apiGetProgramChairStudents(token),
         apiGetProgramChairAcademic(token)
       ]);
-      setStudents(listedStudents);
-      setSections(academic.sections || []);
-      setPlacements((current) => listedStudents.reduce((result, student) => ({
-        ...result,
-        [student.id]: current[student.id] || {
-          yearLevel: student.yearLevel || '',
-          sectionId: student.sectionId || ''
-        }
-      }), {}));
+      const validStudents = Array.isArray(listedStudents) ? listedStudents : [];
+      setStudents(validStudents);
+      setSections(Array.isArray(academic?.sections) ? academic.sections : []);
+      setPlacements((current) =>
+        validStudents.reduce((result, student) => ({
+          ...result,
+          [student.id]: current?.[student.id] || {
+            yearLevel: student.yearLevel || '',
+            sectionId: student.sectionId || ''
+          }
+        }), {})
+      );
     } catch (err) {
       setError(err.message || 'Failed to load students.');
     }
@@ -210,7 +213,7 @@ export default function PcStudentsScreen() {
   const toggleGroup = (key) => setClosedGroups((current) => ({ ...current, [key]: !current[key] }));
 
   const sectionNameById = useMemo(
-    () => sections.reduce((result, section) => ({ ...result, [sectionKey(section)]: section.name }), {}),
+    () => (Array.isArray(sections) ? sections : []).reduce((result, section) => ({ ...result, [sectionKey(section)]: section.name }), {}),
     [sections]
   );
 

@@ -48,8 +48,32 @@ if (!mongoUri) {
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use('/uploads/lessons', express.static(lessonUploadDirectory));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+app.get('/uploads/lessons/:filename', (req, res) => {
+  const requestedFile = req.params.filename;
+  const safeFilename = path.basename(requestedFile);
+  const filePath = path.join(lessonUploadDirectory, safeFilename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Lesson file not found.' });
+  }
+
+  const extension = path.extname(safeFilename).toLowerCase();
+  const mimeType = {
+    '.pdf': 'application/pdf',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  }[extension] || 'application/octet-stream';
+
+  res.setHeader('Content-Type', mimeType);
+  res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.sendFile(filePath);
+});
 
 // Request logger
 app.use((req, res, next) => {
@@ -148,6 +172,7 @@ function serializeQuiz(quiz, includeAnswers = false) {
       options: question.options,
       ...(includeAnswers ? { correctOption: question.correctOption } : {})
     })),
+    submission: quiz.submission || null,
     createdAt: quiz.createdAt,
     updatedAt: quiz.updatedAt
   };
@@ -967,6 +992,55 @@ app.post('/api/teaching/quizzes', authenticateToken, requireTeachingStaff, async
   }
 });
 
+app.get('/api/teaching/quizzes/:quizId/submissions', authenticateToken, requireTeachingStaff, async (req, res) => {
+  try {
+    if (!ObjectId.isValid(req.params.quizId)) {
+      return res.status(400).json({ error: 'Valid quiz is required.' });
+    }
+
+    const quiz = await quizzesCollection.findOne({ _id: new ObjectId(req.params.quizId) });
+    if (!quiz) {
+      return res.status(404).json({ error: 'Quiz not found.' });
+    }
+
+    if (!await hasTeachingAssignment(req.user.userId, quiz.subjectId.toString())) {
+      return res.status(403).json({ error: 'You can only view submissions for your assigned subjects.' });
+    }
+
+    const submissions = await quizSubmissionsCollection
+      .find({ quizId: quiz._id })
+      .sort({ submittedAt: -1 })
+      .toArray();
+
+    const studentIds = submissions.map((submission) => submission.studentId);
+    const students = studentIds.length
+      ? await usersCollection.find({ _id: { $in: studentIds } }, { projection: { password: 0 } }).toArray()
+      : [];
+    const studentsById = new Map(students.map((student) => [student._id.toString(), student]));
+
+    return res.json({
+      quiz: {
+        id: quiz._id.toString(),
+        title: quiz.title,
+        subjectId: quiz.subjectId.toString(),
+        totalQuestions: quiz.questions.length
+      },
+      submissions: submissions.map((submission) => ({
+        id: submission._id.toString(),
+        studentId: submission.studentId.toString(),
+        studentName: studentsById.get(submission.studentId.toString())?.name || 'Unknown student',
+        score: submission.score,
+        total: submission.total,
+        percentage: submission.percentage,
+        submittedAt: submission.submittedAt
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching quiz submissions:', error);
+    return res.status(500).json({ error: 'Failed to fetch quiz submissions.' });
+  }
+});
+
 app.post('/api/teaching/lessons', authenticateToken, requireTeachingStaff, async (req, res) => {
   try {
     const { subjectId, title, description, slides } = req.body;
@@ -1001,6 +1075,48 @@ app.post('/api/teaching/lessons', authenticateToken, requireTeachingStaff, async
   } catch (error) {
     console.error('Error creating lesson:', error);
     return res.status(500).json({ error: 'Failed to create lesson.' });
+  }
+});
+
+app.post('/api/teaching/lessons/upload-base64', authenticateToken, requireTeachingStaff, async (req, res) => {
+  try {
+    const { subjectId, title, description, base64, fileName, mimeType } = req.body;
+    if (!ObjectId.isValid(subjectId) || typeof title !== 'string' || !title.trim() || typeof base64 !== 'string' || !base64.trim()) {
+      return res.status(400).json({ error: 'A valid subject, lesson title, and file payload are required.' });
+    }
+    if (!await hasTeachingAssignment(req.user.userId, subjectId)) {
+      return res.status(403).json({ error: 'You can only upload lessons for assigned subjects.' });
+    }
+
+    const extension = path.extname(fileName || '').toLowerCase();
+    const allowedExtensions = ['.pdf', '.pptx'];
+    if (!allowedExtensions.includes(extension)) {
+      return res.status(400).json({ error: 'Only PDF and PPTX files are supported.' });
+    }
+
+    const safeName = `${Date.now()}-${(fileName || 'lesson').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const buffer = Buffer.from(base64, 'base64');
+    const finalPath = path.join(lessonUploadDirectory, safeName);
+    fs.writeFileSync(finalPath, buffer);
+
+    const now = new Date();
+    const lesson = {
+      subjectId: new ObjectId(subjectId),
+      title: title.trim(),
+      description: typeof description === 'string' ? description.trim() : '',
+      type: 'file',
+      fileName: safeName,
+      slides: [],
+      createdBy: new ObjectId(req.user.userId),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const result = await lessonsCollection.insertOne(lesson);
+    return res.status(201).json({ lesson: serializeLesson({ ...lesson, _id: result.insertedId }) });
+  } catch (error) {
+    console.error('Error creating uploaded lesson from base64:', error);
+    return res.status(500).json({ error: 'Failed to save uploaded lesson.' });
   }
 });
 
@@ -1040,6 +1156,47 @@ app.post('/api/teaching/lessons/upload', authenticateToken, requireTeachingStaff
       return res.status(500).json({ error: 'Failed to save uploaded lesson.' });
     }
   });
+});
+
+app.patch('/api/teaching/lessons/:lessonId/upload-base64', authenticateToken, requireTeachingStaff, async (req, res) => {
+  try {
+    const { base64, fileName, mimeType } = req.body;
+    if (!ObjectId.isValid(req.params.lessonId) || typeof base64 !== 'string' || !base64.trim()) {
+      return res.status(400).json({ error: 'Valid lesson and file payload are required.' });
+    }
+    const lesson = await lessonsCollection.findOne({ _id: new ObjectId(req.params.lessonId) });
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found.' });
+    if (!await hasTeachingAssignment(req.user.userId, lesson.subjectId.toString())) {
+      return res.status(403).json({ error: 'You can only edit lessons for assigned subjects.' });
+    }
+
+    const extension = path.extname(fileName || '').toLowerCase();
+    if (!['.pdf', '.pptx'].includes(extension)) {
+      return res.status(400).json({ error: 'Only PDF and PPTX files are supported.' });
+    }
+
+    const safeName = `${Date.now()}-${(fileName || 'lesson').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const buffer = Buffer.from(base64, 'base64');
+    const finalPath = path.join(lessonUploadDirectory, safeName);
+    fs.writeFileSync(finalPath, buffer);
+
+    if (lesson.fileName) {
+      const oldFilePath = path.join(lessonUploadDirectory, lesson.fileName);
+      if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
+    }
+
+    const updates = {
+      fileName: safeName,
+      type: 'file',
+      slides: [],
+      updatedAt: new Date()
+    };
+    await lessonsCollection.updateOne({ _id: lesson._id }, { $set: updates });
+    return res.json({ lesson: serializeLesson({ ...lesson, ...updates }) });
+  } catch (error) {
+    console.error('Error replacing lesson file from base64:', error);
+    return res.status(500).json({ error: 'Failed to replace lesson file.' });
+  }
 });
 
 app.patch('/api/teaching/lessons/:lessonId', authenticateToken, requireTeachingStaff, async (req, res) => {
@@ -1156,20 +1313,71 @@ app.get('/api/student/lessons', authenticateToken, requireStudent, async (req, r
 
 app.get('/api/student/quizzes', authenticateToken, requireStudent, async (req, res) => {
   try {
-    const enrollments = await enrollmentsCollection.find({ studentId: new ObjectId(req.user.userId) }).toArray();
-    const subjectIds = enrollments.map((enrollment) => enrollment.subjectId);
-    const quizzes = subjectIds.length
-      ? await quizzesCollection.find({ subjectId: { $in: subjectIds } }).sort({ updatedAt: -1 }).toArray()
+    const rawUserId = req.user.userId;
+    const studentIdObj = ObjectId.isValid(rawUserId) ? new ObjectId(rawUserId) : null;
+    const studentIdFilters = studentIdObj ? [studentIdObj, rawUserId.toString()] : [rawUserId.toString()];
+
+    const enrollments = await enrollmentsCollection.find({
+      studentId: { $in: studentIdFilters }
+    }).toArray();
+
+    const subjectIdList = [];
+    enrollments.forEach((e) => {
+      if (e.subjectId) {
+        if (ObjectId.isValid(e.subjectId)) subjectIdList.push(new ObjectId(e.subjectId));
+        subjectIdList.push(e.subjectId.toString());
+      }
+    });
+
+    const quizzes = subjectIdList.length
+      ? await quizzesCollection.find({ subjectId: { $in: subjectIdList } }).sort({ updatedAt: -1 }).toArray()
       : [];
-    const subjects = subjectIds.length
-      ? await subjectsCollection.find({ _id: { $in: subjectIds } }).toArray()
+
+    const quizIdList = [];
+    quizzes.forEach((q) => {
+      if (q._id) {
+        quizIdList.push(q._id);
+        quizIdList.push(q._id.toString());
+      }
+    });
+
+    const submissions = quizIdList.length
+      ? await quizSubmissionsCollection.find({
+          studentId: { $in: studentIdFilters },
+          quizId: { $in: quizIdList }
+        }).toArray()
+      : [];
+
+    const submissionsByQuizId = new Map();
+    submissions.forEach((sub) => {
+      const qId = sub.quizId ? sub.quizId.toString() : '';
+      if (qId) {
+        submissionsByQuizId.set(qId, sub);
+      }
+    });
+
+    const subjectObjIds = subjectIdList.filter((id) => id instanceof ObjectId);
+    const subjects = subjectObjIds.length
+      ? await subjectsCollection.find({ _id: { $in: subjectObjIds } }).toArray()
       : [];
     const subjectsById = new Map(subjects.map((subject) => [subject._id.toString(), subject]));
+
     return res.json({
-      quizzes: quizzes.map((quiz) => serializeQuiz({
-        ...quiz,
-        subjectCode: subjectsById.get(quiz.subjectId.toString())?.code
-      }))
+      quizzes: quizzes.map((quiz) => {
+        const quizIdStr = quiz._id ? quiz._id.toString() : '';
+        const sub = submissionsByQuizId.get(quizIdStr);
+        return serializeQuiz({
+          ...quiz,
+          subjectCode: subjectsById.get(quiz.subjectId ? quiz.subjectId.toString() : '')?.code,
+          submission: sub ? {
+            score: sub.score,
+            total: sub.total,
+            percentage: sub.percentage,
+            answers: sub.answers,
+            submittedAt: sub.submittedAt
+          } : null
+        });
+      })
     });
   } catch (error) {
     console.error('Error fetching student quizzes:', error);
@@ -1179,19 +1387,50 @@ app.get('/api/student/quizzes', authenticateToken, requireStudent, async (req, r
 
 app.post('/api/student/quizzes/:quizId/submit', authenticateToken, requireStudent, async (req, res) => {
   try {
-    if (!ObjectId.isValid(req.params.quizId)) {
+    const rawQuizId = req.params.quizId;
+    if (!rawQuizId || !ObjectId.isValid(rawQuizId)) {
       return res.status(400).json({ error: 'Valid quiz is required.' });
     }
-    const quizId = new ObjectId(req.params.quizId);
-    const quiz = await quizzesCollection.findOne({ _id: quizId });
+    const quizIdObj = new ObjectId(rawQuizId);
+    const quizIdStr = rawQuizId.toString();
+    const rawUserId = req.user.userId;
+    const studentIdObj = ObjectId.isValid(rawUserId) ? new ObjectId(rawUserId) : null;
+    const studentIdStr = rawUserId.toString();
+    const studentIdFilters = studentIdObj ? [studentIdObj, studentIdStr] : [studentIdStr];
+
+    const quiz = await quizzesCollection.findOne({
+      $or: [{ _id: quizIdObj }, { _id: quizIdStr }]
+    });
     if (!quiz) return res.status(404).json({ error: 'Quiz not found.' });
 
+    const subjectIdFilters = [];
+    if (quiz.subjectId) {
+      if (ObjectId.isValid(quiz.subjectId)) subjectIdFilters.push(new ObjectId(quiz.subjectId));
+      subjectIdFilters.push(quiz.subjectId.toString());
+    }
+
     const enrollment = await enrollmentsCollection.findOne({
-      studentId: new ObjectId(req.user.userId),
-      subjectId: quiz.subjectId
+      studentId: { $in: studentIdFilters },
+      subjectId: { $in: subjectIdFilters }
     });
     if (!enrollment) {
       return res.status(403).json({ error: 'You can only submit quizzes for enrolled subjects.' });
+    }
+
+    const existingSubmission = await quizSubmissionsCollection.findOne({
+      studentId: { $in: studentIdFilters },
+      quizId: { $in: [quizIdObj, quizIdStr] }
+    });
+    if (existingSubmission) {
+      return res.status(400).json({
+        error: 'You have already taken this quiz. Retakes are not permitted.',
+        result: {
+          score: existingSubmission.score,
+          total: existingSubmission.total,
+          percentage: existingSubmission.percentage,
+          submittedAt: existingSubmission.submittedAt
+        }
+      });
     }
 
     const { answers } = req.body;
@@ -1210,8 +1449,8 @@ app.post('/api/student/quizzes/:quizId/submit', authenticateToken, requireStuden
     const total = quiz.questions.length;
     const percentage = Math.round((score / total) * 100);
     const submission = {
-      quizId,
-      studentId: new ObjectId(req.user.userId),
+      quizId: quizIdObj,
+      studentId: studentIdObj || studentIdStr,
       answers,
       score,
       total,
@@ -1219,7 +1458,10 @@ app.post('/api/student/quizzes/:quizId/submit', authenticateToken, requireStuden
       submittedAt: new Date()
     };
     await quizSubmissionsCollection.replaceOne(
-      { quizId, studentId: new ObjectId(req.user.userId) },
+      {
+        quizId: quizIdObj,
+        studentId: studentIdObj || studentIdStr
+      },
       submission,
       { upsert: true }
     );

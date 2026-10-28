@@ -12,6 +12,7 @@ export default function RoleDashboard({ role }) {
   const { user, token, logout } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [stats, setStats] = useState({ chart: [] });
+  const chartData = Array.isArray(stats?.chart) ? stats.chart : [];
   const roleTitle = role === 'superadmin' ? 'Super Admin' : role === 'programchair' ? 'Program Chair' : 'Faculty';
   const description = role === 'superadmin'
     ? 'Manage subjects and user access.'
@@ -62,10 +63,10 @@ export default function RoleDashboard({ role }) {
         <Text style={styles.role}>{roleTitle}</Text>
         <Text style={styles.description}>{description}</Text>
       </View>
-      {stats.chart.length > 0 ? (
+      {chartData.length > 0 ? (
         <DashboardBarChart
           title="Overview"
-          data={stats.chart}
+          data={chartData}
           color={role === 'programchair' ? '#7C3AED' : role === 'superadmin' ? '#059669' : '#2563EB'}
         />
       ) : null}

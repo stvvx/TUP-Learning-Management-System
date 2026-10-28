@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import StudentPage from '../../components/(Students)/StudentPage';
 import StudentHeader from '../../components/(Students)/StudentHeader';
@@ -35,6 +35,7 @@ function TeachingLessonsScreen() {
   const [message, setMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [viewingLesson, setViewingLesson] = useState(null);
+  const [deletingLessonId, setDeletingLessonId] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -48,6 +49,16 @@ function TeachingLessonsScreen() {
       setSubjectId((current) => current || assignedSubjects[0]?.id || '');
     } catch (err) {
       setError(err.message || 'Failed to load teaching content.');
+    }
+  }, [token]);
+
+  const refreshLessons = useCallback(async () => {
+    if (!token) return;
+    try {
+      const teachingLessons = await apiGetTeachingLessons(token);
+      setLessons(teachingLessons);
+    } catch (err) {
+      setError(err.message || 'Failed to refresh lessons.');
     }
   }, [token]);
 
@@ -80,7 +91,7 @@ function TeachingLessonsScreen() {
       let lesson;
       if (editingLesson) {
         lesson = selectedFile
-          ? await apiReplaceLessonFile(token, editingLesson.id, selectedFile.file || {
+          ? await apiReplaceLessonFile(token, editingLesson.id, {
             uri: selectedFile.uri,
             name: selectedFile.name,
             type: selectedFile.mimeType || 'application/octet-stream'
@@ -96,7 +107,7 @@ function TeachingLessonsScreen() {
           subjectId,
           title,
           description,
-          file: selectedFile.file || {
+          file: {
             uri: selectedFile.uri,
             name: selectedFile.name,
             type: selectedFile.mimeType || 'application/octet-stream'
@@ -144,23 +155,36 @@ function TeachingLessonsScreen() {
   };
 
   const deleteLesson = (lesson) => {
-    Alert.alert('Delete lesson', `Delete "${lesson.title}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiDeleteLesson(token, lesson.id);
-            setLessons((current) => current.filter((item) => item.id !== lesson.id));
-            if (editingLesson?.id === lesson.id) cancelEdit();
-            setMessage('Lesson deleted successfully.');
-          } catch (err) {
-            setError(err.message || 'Failed to delete lesson.');
-          }
-        }
+    if (!lesson?.id || deletingLessonId === lesson.id) return;
+
+    const performDelete = async () => {
+      setDeletingLessonId(lesson.id);
+      setMessage('');
+      setError('');
+
+      try {
+        await apiDeleteLesson(token, lesson.id);
+        setViewingLesson((current) => (current?.id === lesson.id ? null : current));
+        if (editingLesson?.id === lesson.id) cancelEdit();
+        await refreshLessons();
+        setMessage('Lesson deleted successfully.');
+      } catch (err) {
+        setError(err.message || 'Failed to delete lesson.');
+      } finally {
+        setDeletingLessonId(null);
       }
-    ]);
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete "${lesson.title}"?`)) {
+        performDelete();
+      }
+    } else {
+      Alert.alert('Delete lesson', `Delete "${lesson.title}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: performDelete }
+      ]);
+    }
   };
 
   if (isLoading) return null;
@@ -195,18 +219,28 @@ function TeachingLessonsScreen() {
         {editingLesson ? <AuthButton title="Cancel Edit" variant="outline" onPress={cancelEdit} /> : null}
       </View>
       <Text style={styles.heading}>Published lessons</Text>
-      {lessons.length === 0 ? <Text style={styles.empty}>No lessons created yet.</Text> : lessons.map((lesson) => (
-        <View key={lesson.id} style={styles.item}>
-          <Text style={styles.itemTitle}>{lesson.title}</Text>
-          <Text style={styles.itemText}>{subjects.find((subject) => subject.id === lesson.subjectId)?.code || 'Assigned subject'} · {lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} slide(s)`}</Text>
-          <AuthButton title="View lesson" variant="outline" onPress={() => setViewingLesson(lesson)} />
-          <View style={styles.actions}>
-            <AuthButton title="Edit" variant="outline" onPress={() => editLesson(lesson)} style={styles.actionButton} />
-            <AuthButton title="Delete" variant="outline" onPress={() => deleteLesson(lesson)} style={[styles.actionButton, styles.deleteButton]} textStyle={styles.deleteText} />
+      {lessons.length === 0 ? <Text style={styles.empty}>No lessons created yet.</Text> : lessons.map((lesson) => {
+        const isViewingLesson = viewingLesson?.id === lesson.id;
+        return (
+          <View key={lesson.id} style={styles.item}>
+            <Text style={styles.itemTitle}>{lesson.title}</Text>
+            <Text style={styles.itemText}>{subjects.find((subject) => subject.id === lesson.subjectId)?.code || 'Assigned subject'} · {lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} slide(s)`}</Text>
+            <AuthButton title={isViewingLesson ? 'Hide lesson' : 'View lesson'} variant="outline" onPress={() => setViewingLesson(isViewingLesson ? null : lesson)} />
+            {isViewingLesson ? <LessonViewer lesson={lesson} onClose={() => setViewingLesson(null)} /> : null}
+            <View style={styles.actions}>
+              <AuthButton title="Edit" variant="outline" onPress={() => editLesson(lesson)} style={styles.actionButton} />
+              <AuthButton
+                title={deletingLessonId === lesson.id ? 'Deleting...' : 'Delete'}
+                variant="outline"
+                onPress={() => deleteLesson(lesson)}
+                style={[styles.actionButton, styles.deleteButton, deletingLessonId === lesson.id && styles.deleteDisabled]}
+                textStyle={styles.deleteText}
+                disabled={deletingLessonId === lesson.id}
+              />
+            </View>
           </View>
-        </View>
-      ))}
-      <LessonViewer lesson={viewingLesson} onClose={() => setViewingLesson(null)} />
+        );
+      })}
     </ScrollView>
   );
 }
@@ -231,21 +265,95 @@ function StudentLessonsScreen() {
       <Text style={styles.brandTitle}>Lessons</Text>
       <StudentHeader activeRoute="/lessons" />
       <Text style={styles.helper}>Lessons published for your enrolled subjects.</Text>
-      {lessons.length === 0 ? <Text style={styles.empty}>No lessons are available yet.</Text> : lessons.map((lesson) => (
-        <View key={lesson.id} style={styles.item}>
-          <Text style={styles.itemTitle}>{lesson.title}</Text>
-          <Text style={styles.itemText}>{lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} slide(s)`}</Text>
-          {lesson.description ? <Text style={styles.itemText}>{lesson.description}</Text> : null}
-          <AuthButton title="View lesson" variant="outline" onPress={() => setViewingLesson(lesson)} />
-        </View>
-      ))}
-      <LessonViewer lesson={viewingLesson} onClose={() => setViewingLesson(null)} />
+      {lessons.length === 0 ? <Text style={styles.empty}>No lessons are available yet.</Text> : lessons.map((lesson) => {
+        const isViewingLesson = viewingLesson?.id === lesson.id;
+        return (
+          <View key={lesson.id} style={styles.item}>
+            <Text style={styles.itemTitle}>{lesson.title}</Text>
+            <Text style={styles.itemText}>{lesson.type === 'file' ? lesson.fileName : `${lesson.slides.length} slide(s)`}</Text>
+            {lesson.description ? <Text style={styles.itemText}>{lesson.description}</Text> : null}
+            <AuthButton title={isViewingLesson ? 'Hide lesson' : 'View lesson'} variant="outline" onPress={() => setViewingLesson(isViewingLesson ? null : lesson)} />
+            {isViewingLesson ? <LessonViewer lesson={lesson} onClose={() => setViewingLesson(null)} /> : null}
+          </View>
+        );
+      })}
     </ScrollView>
   );
 }
 
 function LessonViewer({ lesson, onClose }) {
+  const [pdfDataUri, setPdfDataUri] = useState('');
+  const [viewerError, setViewerError] = useState('');
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadPdfDataUri = async () => {
+      if (!lesson || !lesson.fileUrl || !lesson.fileName?.toLowerCase().endsWith('.pdf')) {
+        if (isActive) {
+          setPdfDataUri('');
+          setViewerError('');
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}${lesson.fileUrl}`);
+        if (!response.ok) {
+          throw new Error(`PDF request failed with status ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (isActive && typeof reader.result === 'string') {
+            setPdfDataUri(reader.result);
+            setViewerError('');
+          }
+        };
+        reader.onerror = () => {
+          if (isActive) {
+            setViewerError('This PDF could not be loaded inside the app.');
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (error) {
+        console.warn('Failed to load PDF for in-app preview:', error);
+        if (isActive) {
+          setViewerError('This PDF could not be loaded inside the app.');
+        }
+      }
+    };
+
+    loadPdfDataUri();
+
+    return () => {
+      isActive = false;
+    };
+  }, [lesson]);
+
   if (!lesson) return null;
+
+  const lessonFileUrl = lesson.fileUrl ? `${API_BASE_URL}${lesson.fileUrl}` : '';
+  const isPdf = lesson.fileName?.toLowerCase().endsWith('.pdf');
+  const embeddedViewerUrl = lessonFileUrl
+    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(lessonFileUrl)}`
+    : '';
+
+  const handleDownloadLesson = async () => {
+    if (!lessonFileUrl) return;
+    try {
+      const canOpen = await Linking.canOpenURL(lessonFileUrl);
+      if (!canOpen) {
+        Alert.alert('Download unavailable', 'This file cannot be opened from this device.');
+        return;
+      }
+      await Linking.openURL(lessonFileUrl);
+    } catch (error) {
+      console.warn('Failed to open lesson file for download:', error);
+      Alert.alert('Download failed', 'This lesson file could not be opened on this device.');
+    }
+  };
 
   return (
     <View style={styles.viewer}>
@@ -263,10 +371,25 @@ function LessonViewer({ lesson, onClose }) {
       {lesson.description ? <Text style={styles.viewerDescription}>{lesson.description}</Text> : null}
       {lesson.fileUrl ? (
         <View style={styles.fileViewer}>
-          <Text style={styles.fileViewerText}>This lesson is an uploaded {lesson.fileName?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'PPTX'} file.</Text>
-          <TouchableOpacity onPress={() => Linking.openURL(`${API_BASE_URL}${lesson.fileUrl}`)}>
-            <Text style={styles.link}>Open uploaded lesson</Text>
-          </TouchableOpacity>
+          <Text style={styles.fileViewerText}>
+            {Platform.OS === 'web'
+              ? `This lesson is an uploaded ${isPdf ? 'PDF' : 'PPTX'} file. It is displayed inside the app.`
+              : `This lesson is an uploaded ${isPdf ? 'PDF' : 'PPTX'} file. Download it on mobile.`}
+          </Text>
+          {viewerError ? <Text style={styles.error}>{viewerError}</Text> : null}
+          {Platform.OS === 'web' ? (
+            <View style={styles.webEmbedContainer}>
+              <iframe
+                title={lesson.title}
+                src={isPdf ? pdfDataUri || lessonFileUrl : embeddedViewerUrl}
+                style={styles.iframe}
+              />
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.downloadButton} onPress={handleDownloadLesson}>
+              <Text style={styles.downloadButtonText}>Download lesson</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         lesson.slides.map((slide, index) => (
@@ -302,6 +425,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   actionButton: { flex: 1 },
   deleteButton: { borderColor: '#FCA5A5' },
+  deleteDisabled: { opacity: 0.6 },
   deleteText: { color: '#DC2626' },
   slidePreview: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 8, marginTop: 8 },
   viewer: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#93C5FD', marginTop: 12 },
@@ -312,7 +436,13 @@ const styles = StyleSheet.create({
   closeText: { color: '#2563EB', fontWeight: '700' },
   viewerDescription: { color: '#475569', fontSize: 14, lineHeight: 21, marginTop: 12 },
   fileViewer: { backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginTop: 12 },
-  fileViewerText: { color: '#1E3A8A', fontSize: 13, lineHeight: 19 },
+  fileViewerText: { color: '#1E3A8A', fontSize: 13, lineHeight: 19, marginBottom: 8 },
+  downloadButton: { marginTop: 8, backgroundColor: '#2563EB', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
+  downloadButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  webview: { height: 360, borderRadius: 8, backgroundColor: '#FFFFFF', marginTop: 8 },
+  webEmbedContainer: { height: 360, marginTop: 8, borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF' },
+  iframe: { width: '100%', height: '100%', border: 0 },
+  loadingText: { color: '#475569', fontSize: 12, paddingVertical: 10 },
   slideViewer: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 14, marginTop: 14 },
   slideNumber: { color: '#2563EB', fontSize: 12, fontWeight: '700', marginBottom: 4 },
   slideBody: { color: '#334155', fontSize: 15, lineHeight: 23, marginTop: 8 }
