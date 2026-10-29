@@ -1,8 +1,21 @@
-import React, { useEffect } from 'react';
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  ScrollView,
+  View,
+  Text,
+  Image,
+  Pressable,
+  Alert,
+  ActivityIndicator,
+  Platform,
+  StyleSheet
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
+import { apiUpdateProfilePicture } from '../../api/client';
 import StudentHeader from '../../components/(Students)/StudentHeader';
 
 // TUP palette, same as the other screens. Consider moving this to a shared theme file.
@@ -45,13 +58,75 @@ function InfoRow({ icon, label, value, isLast }) {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { user, token, isLoading, refreshUser } = useAuth();
+
+  const [photo, setPhoto] = useState(null);
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false);
+  const yearSection = user?.yearSection || ''; // set by admin, read-only here
+
+  const storeKey = `profile:${user?.id || user?._id || user?.email || 'me'}`;
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.replace('/login');
     }
   }, [isLoading, router, user]);
+
+  // Load saved photo + year/section (local storage fallback).
+  useEffect(() => {
+    if (!user) return;
+    AsyncStorage.getItem(storeKey)
+      .then((raw) => {
+        const saved = raw ? JSON.parse(raw) : {};
+        setPhoto(user.profilePicture || saved.photo || user.photoUrl || null);
+      })
+      .catch(() => {});
+  }, [user, storeKey]);
+
+  const persist = (next) => {
+    const data = { photo, ...next };
+    AsyncStorage.setItem(storeKey, JSON.stringify(data)).catch(() => {});
+  };
+
+  const pickPhoto = async () => {
+    if (Platform.OS !== 'web') {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to change your profile picture.');
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, // lets the user crop on phone
+      aspect: [1, 1], // square crop -> fits the circle
+      quality: 0.4, // small file
+      base64: true
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      Alert.alert('Photo unavailable', 'Could not prepare this image for upload. Please choose another photo.');
+      return;
+    }
+
+    const mimeType = ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType)
+      ? asset.mimeType
+      : 'image/jpeg';
+    const imageData = `data:${mimeType};base64,${asset.base64}`;
+
+    setIsSavingPhoto(true);
+    try {
+      const savedPhoto = await apiUpdateProfilePicture(token, imageData);
+      setPhoto(savedPhoto);
+      persist({ photo: savedPhoto });
+      await refreshUser();
+    } catch (error) {
+      Alert.alert('Could not save photo', error.message || 'Please try again.');
+    } finally {
+      setIsSavingPhoto(false);
+    }
+  };
 
   if (isLoading || !user) {
     return null;
@@ -62,6 +137,7 @@ export default function ProfileScreen() {
 
   const rows = [
     { icon: 'person-outline', label: 'Name', value: user?.name || '—' },
+    { icon: 'people-outline', label: 'Year & Section', value: yearSection || '—' },
     { icon: 'mail-outline', label: 'Email', value: user?.email || '—' },
     { icon: 'shield-checkmark-outline', label: 'Role', value: roleLabel },
     user?.program
@@ -84,6 +160,7 @@ export default function ProfileScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       {/* Page header */}
       <View style={styles.pageHeader}>
@@ -105,10 +182,31 @@ export default function ProfileScreen() {
           <Ionicons name="settings" size={170} color={COLORS.gold} style={styles.gearBig} />
           <Ionicons name="settings" size={70} color={COLORS.gold} style={styles.gearSmall} />
 
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initial}</Text>
-          </View>
+          {/* Avatar: tap to change photo */}
+          <Pressable
+            onPress={pickPhoto}
+            style={styles.avatarWrap}
+            accessibilityRole="button"
+            accessibilityLabel={isSavingPhoto ? 'Saving profile photo' : 'Change profile photo'}
+            disabled={isSavingPhoto}
+          >
+            <View style={styles.avatar}>
+              {isSavingPhoto ? (
+                <ActivityIndicator color={COLORS.brandDeep} />
+              ) : photo ? (
+                <Image source={{ uri: photo }} style={styles.avatarImg} resizeMode="cover" />
+              ) : (
+                <Text style={styles.avatarText}>{initial}</Text>
+              )}
+            </View>
+            <View style={styles.cameraBtn}>
+              <Ionicons name="camera" size={14} color={COLORS.brandDeep} />
+            </View>
+          </Pressable>
+
           <Text style={styles.heroName} numberOfLines={2}>{user?.name || 'TUPian'}</Text>
+
+
           <Text style={styles.heroEmail} numberOfLines={1}>{user?.email || '—'}</Text>
 
           <View style={styles.badgeRow}>
@@ -191,6 +289,7 @@ const styles = StyleSheet.create({
     opacity: 0.1,
     transform: [{ rotate: '-20deg' }]
   },
+  avatarWrap: { marginBottom: 12 },
   avatar: {
     width: 88,
     height: 88,
@@ -200,9 +299,23 @@ const styles = StyleSheet.create({
     borderColor: COLORS.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12
+    overflow: 'hidden' // clips the photo to the circle
   },
+  avatarImg: { width: '100%', height: '100%' },
   avatarText: { fontSize: 38, fontWeight: '900', color: COLORS.brandDeep },
+  cameraBtn: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   heroName: {
     fontSize: 22,
     fontWeight: '900',
@@ -210,6 +323,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -0.3
   },
+
+  /* Year & Section */
+  ysRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10
+  },
+  ysText: { fontSize: 14, fontWeight: '800', color: COLORS.gold, letterSpacing: 0.4 },
+  editRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  input: {
+    minWidth: 160,
+    maxWidth: 220,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.brandLine,
+    backgroundColor: COLORS.brandDeep,
+    color: COLORS.surface,
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
+  saveBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.gold,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+
   heroEmail: { fontSize: 13, color: COLORS.brandLine, marginTop: 3, textAlign: 'center' },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14 },
   roleBadge: {

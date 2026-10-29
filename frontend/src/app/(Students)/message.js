@@ -9,7 +9,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -166,9 +167,11 @@ function ChatMessage({ item, isOwnMessage, isFirstInGroup, isLastInGroup, showSt
 
 export default function MessageScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const { user, token, isLoading: isAuthLoading } = useAuth();
   const [contacts, setContacts] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
+  const [contactSearch, setContactSearch] = useState('');
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
@@ -328,8 +331,12 @@ export default function MessageScreen() {
   if (isAuthLoading || !user) return null;
 
   const isStudent = user.role === 'student';
+  const isWideLayout = width >= 760;
   const staffRole = user.role === 'program_chair' ? 'programchair' : 'faculty';
   const canSend = Boolean(draft.trim()) && !isSending && Boolean(selectedContact);
+  const filteredContacts = contacts.filter((contact) =>
+    contact.name?.toLowerCase().includes(contactSearch.trim().toLowerCase())
+  );
 
   return (
     <KeyboardAvoidingView
@@ -360,46 +367,102 @@ export default function MessageScreen() {
           )}
         </View>
 
-        {/* Contacts */}
-        <View style={styles.contactSection}>
-          <View style={styles.sectionLabelRow}>
-            <Text style={styles.sectionLabel}>{isStudent ? 'Your faculty' : 'Your students'}</Text>
-            <Text style={styles.sectionHint}>Tap to chat 💬</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.contactList}
-          >
-            {contacts.map((contact) => {
-              const isSelected = selectedContact?.id === contact.id;
-              return (
-                <TouchableOpacity
-                  key={contact.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Chat with ${contact.name}`}
-                  accessibilityState={{ selected: isSelected }}
-                  onPress={() => selectContact(contact)}
-                  style={styles.contactItem}
-                  activeOpacity={0.8}
-                >
-                  <Avatar name={contact.name} size={50} ring={isSelected} />
-                  <View style={[styles.contactNamePill, isSelected && styles.contactNamePillSelected]}>
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.contactName, isSelected && styles.contactNameSelected]}
+        <View style={[styles.messengerLayout, isWideLayout && styles.messengerLayoutWide]}>
+          {isWideLayout ? (
+            <View style={styles.contactSidebar}>
+              <View style={styles.sidebarHeading}>
+                <Text style={styles.sidebarTitle}>Messages</Text>
+                <Text style={styles.sidebarCount}>{contacts.length}</Text>
+              </View>
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={17} color={COLORS.faint} />
+                <TextInput
+                  value={contactSearch}
+                  onChangeText={setContactSearch}
+                  placeholder="Search people"
+                  placeholderTextColor={COLORS.faint}
+                  style={styles.searchInput}
+                  accessibilityLabel="Search contacts"
+                />
+              </View>
+              <Text style={styles.sidebarSectionLabel}>{isStudent ? 'FACULTY' : 'STUDENTS'}</Text>
+              <ScrollView
+                style={styles.sidebarContactScroll}
+                contentContainerStyle={styles.sidebarContactList}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {filteredContacts.map((contact) => {
+                  const isSelected = selectedContact?.id === contact.id;
+                  return (
+                    <TouchableOpacity
+                      key={contact.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Chat with ${contact.name}`}
+                      accessibilityState={{ selected: isSelected }}
+                      onPress={() => selectContact(contact)}
+                      style={[styles.sidebarContact, isSelected && styles.sidebarContactSelected]}
+                      activeOpacity={0.8}
                     >
-                      {contact.name?.split(' ')[0] || contact.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+                      <Avatar name={contact.name} size={44} />
+                      <View style={styles.sidebarContactText}>
+                        <Text numberOfLines={1} style={styles.sidebarContactName}>{contact.name}</Text>
+                        <Text numberOfLines={1} style={styles.sidebarContactRole}>
+                          {formatRole(contact.role)}
+                        </Text>
+                      </View>
+                      {isSelected ? <View style={styles.selectedContactMark} /> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+                {filteredContacts.length === 0 ? (
+                  <Text style={styles.sidebarEmptyText}>
+                    {contacts.length ? 'No matching contacts.' : 'No contacts available yet.'}
+                  </Text>
+                ) : null}
+              </ScrollView>
+            </View>
+          ) : (
+            <View style={styles.contactSection}>
+              <View style={styles.sectionLabelRow}>
+                <Text style={styles.sectionLabel}>{isStudent ? 'Your faculty' : 'Your students'}</Text>
+                <Text style={styles.sectionHint}>Tap to chat</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.contactList}
+              >
+                {contacts.map((contact) => {
+                  const isSelected = selectedContact?.id === contact.id;
+                  return (
+                    <TouchableOpacity
+                      key={contact.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Chat with ${contact.name}`}
+                      accessibilityState={{ selected: isSelected }}
+                      onPress={() => selectContact(contact)}
+                      style={styles.contactItem}
+                      activeOpacity={0.8}
+                    >
+                      <Avatar name={contact.name} size={50} ring={isSelected} />
+                      <View style={[styles.contactNamePill, isSelected && styles.contactNamePillSelected]}>
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.contactName, isSelected && styles.contactNameSelected]}
+                        >
+                          {contact.name?.split(' ')[0] || contact.name}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
 
-        {/* Chat card */}
-        <View style={styles.chatWrap}>
+          {/* Chat card */}
+          <View style={[styles.chatWrap, isWideLayout && styles.chatWrapWide]}>
           <View style={styles.chatShadow} />
           <View style={styles.chat}>
             <View style={styles.chatHeader}>
@@ -532,6 +595,7 @@ export default function MessageScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          </View>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -577,6 +641,82 @@ const styles = StyleSheet.create({
   countPillText: { color: COLORS.surface, fontWeight: '800', fontSize: 14 },
   headerTabs: { paddingHorizontal: 20 },
 
+  /* Responsive Messenger layout */
+  messengerLayout: { flex: 1, minHeight: 0 },
+  messengerLayoutWide: {
+    flexDirection: 'row',
+    gap: 14,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 18
+  },
+  contactSidebar: {
+    width: 260,
+    minHeight: 0,
+    padding: 14,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    borderRadius: 18
+  },
+  sidebarHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14
+  },
+  sidebarTitle: { fontSize: 18, fontWeight: '900', color: COLORS.ink },
+  sidebarCount: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 7,
+    borderRadius: 12,
+    overflow: 'hidden',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    backgroundColor: COLORS.goldSoft,
+    color: COLORS.brandDeep,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  searchBox: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    backgroundColor: COLORS.paper,
+    borderWidth: 1,
+    borderColor: COLORS.line
+  },
+  searchInput: { flex: 1, paddingVertical: 8, color: COLORS.ink, fontSize: 13 },
+  sidebarSectionLabel: {
+    marginTop: 18,
+    marginBottom: 8,
+    color: COLORS.muted,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1
+  },
+  sidebarContactScroll: { flex: 1, minHeight: 0 },
+  sidebarContactList: { gap: 5, paddingBottom: 8 },
+  sidebarContact: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 12
+  },
+  sidebarContactSelected: { backgroundColor: COLORS.brandSoft },
+  sidebarContactText: { flex: 1, minWidth: 0 },
+  sidebarContactName: { color: COLORS.ink, fontSize: 13, fontWeight: '800' },
+  sidebarContactRole: { marginTop: 3, color: COLORS.muted, fontSize: 11 },
+  selectedContactMark: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.brand },
+  sidebarEmptyText: { paddingVertical: 16, color: COLORS.muted, fontSize: 12, textAlign: 'center' },
+
   /* Avatars */
   avatar: {
     alignItems: 'center',
@@ -620,7 +760,8 @@ const styles = StyleSheet.create({
   contactNameSelected: { color: COLORS.surface, fontWeight: '800' },
 
   /* Chat card with hard offset shadow */
-  chatWrap: { flex: 1, marginLeft: 16, marginRight: 22, marginBottom: 20 },
+  chatWrap: { flex: 1, minHeight: 0, marginLeft: 16, marginRight: 22, marginBottom: 20 },
+  chatWrapWide: { minWidth: 0, margin: 0 },
   chatShadow: {
     position: 'absolute',
     top: 6,

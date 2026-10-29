@@ -6,6 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
+  useWindowDimensions,
   View
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -366,6 +368,7 @@ function TeachingSubjectsScreen() {
 
 function StudentSubjectsScreen() {
   const { user, token, isLoading } = useAuth();
+  const { width } = useWindowDimensions();
   const [data, setData] = useState({ yearLevel: null, subjects: [], terms: [] });
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [error, setError] = useState('');
@@ -411,6 +414,7 @@ function StudentSubjectsScreen() {
   if (isLoading || user?.role !== 'student') return null;
   const visibleSubjects = data.subjects.filter((subject) => subject.term === selectedTerm);
   const enrolledCount = data.subjects.filter((subject) => subject.enrolled).length;
+  const isWideLayout = width >= 820;
 
   return (
     <ScrollView
@@ -443,29 +447,72 @@ function StudentSubjectsScreen() {
         </EmptyState>
       ) : (
         <>
-          <View style={styles.yearLevelPill}>
+          <View style={styles.studentYearLevelCard}>
             <Ionicons name="ribbon" size={16} color={COLORS.brandDeep} />
-            <Text style={styles.yearLevel}>Year level: {data.yearLevel}</Text>
+            <Text style={styles.studentYearLevelLabel}>Your year level</Text>
+            <Text style={styles.studentYearLevel}>{data.yearLevel}</Text>
           </View>
-          <DropdownSelect label="Semester" icon="calendar-outline" placeholder="Select semester" options={TERM_OPTIONS} value={selectedTerm} onSelect={setSelectedTerm} />
+          <View style={styles.studentFilterCard}>
+            <DropdownSelect label="Semester" icon="calendar-outline" placeholder="Select semester" options={TERM_OPTIONS} value={selectedTerm} onSelect={setSelectedTerm} />
+          </View>
           {visibleSubjects.length === 0 ? (
             <EmptyState>No subjects are available for this semester.</EmptyState>
           ) : visibleSubjects.map((subject) => (
-            <View key={subject.id} style={[styles.item, subject.enrolled && styles.itemEnrolled]}>
-              <View style={styles.itemTopRow}>
-                <View style={styles.codeChip}>
-                  <Text style={styles.codeChipText}>{subject.code}</Text>
-                </View>
-                {subject.enrolled ? (
-                  <View style={styles.enrolledBadge}>
-                    <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
-                    <Text style={styles.enrolledBadgeText}>Enrolled</Text>
+            <View key={subject.id} style={[styles.studentSubjectCard, isWideLayout && styles.studentSubjectCardWide]}>
+              <View style={styles.studentSubjectDetails}>
+                <View style={styles.studentSubjectHeading}>
+                  <View style={styles.studentSubjectIcon}>
+                    <Ionicons name="library-outline" size={21} color={COLORS.brand} />
                   </View>
-                ) : null}
+                  <View style={styles.studentSubjectTitleBlock}>
+                    <Text style={styles.studentSubjectCode}>{subject.code}</Text>
+                    <Text style={styles.studentSubjectMeta}>{subject.yearLevel} · {subject.term}</Text>
+                  </View>
+                  {subject.enrolled ? (
+                    <View style={styles.enrolledBadge}>
+                      <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
+                      <Text style={styles.enrolledBadgeText}>Enrolled</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.studentSubjectDescription}>{subject.description}</Text>
               </View>
-              <Text style={styles.itemText}>{subject.description}</Text>
-              <View style={styles.itemButtonGap}>
-                <AuthButton title={subject.enrolled ? 'Enrolled' : 'Enroll in Subject'} onPress={() => enroll(subject.id)} disabled={subject.enrolled || isSaving} />
+              <View style={[styles.studentSubjectActionPanel, isWideLayout && styles.studentSubjectActionPanelWide]}>
+                <View style={styles.studentSubjectStatusRow}>
+                  <Ionicons
+                    name={subject.enrolled ? 'checkmark-circle' : 'time-outline'}
+                    size={18}
+                    color={subject.enrolled ? COLORS.success : COLORS.muted}
+                  />
+                  <Text style={[styles.studentSubjectStatus, subject.enrolled && styles.studentSubjectStatusEnrolled]}>
+                    {subject.enrolled ? 'You are enrolled' : 'Available to enroll'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.studentEnrollButton,
+                    subject.enrolled && styles.studentEnrollButtonEnrolled,
+                    (subject.enrolled || isSaving) && styles.studentEnrollButtonDisabled
+                  ]}
+                  onPress={() => enroll(subject.id)}
+                  disabled={subject.enrolled || isSaving}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={subject.enrolled ? `${subject.code} enrolled` : `Enroll in ${subject.code}`}
+                >
+                  {isSaving && !subject.enrolled ? (
+                    <ActivityIndicator size="small" color={COLORS.surface} />
+                  ) : (
+                    <Ionicons
+                      name={subject.enrolled ? 'checkmark' : 'add'}
+                      size={18}
+                      color={subject.enrolled ? COLORS.success : COLORS.surface}
+                    />
+                  )}
+                  <Text style={[styles.studentEnrollButtonText, subject.enrolled && styles.studentEnrollButtonTextEnrolled]}>
+                    {subject.enrolled ? 'Enrolled' : 'Enroll in subject'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           ))}
@@ -547,6 +594,22 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '-1deg' }]
   },
   yearLevel: { fontSize: 13, fontWeight: '800', color: COLORS.brandDeep },
+  studentYearLevelCard: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 14
+  },
+  studentYearLevelLabel: { color: COLORS.muted, fontSize: 12 },
+  studentYearLevel: { color: COLORS.brandDeep, fontSize: 13, fontWeight: '800' },
+  studentFilterCard: { marginBottom: 10 },
 
   /* Section headings */
   sectionHeaderRow: {
@@ -650,6 +713,63 @@ const styles = StyleSheet.create({
     borderRadius: 999
   },
   enrolledBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.success },
+
+  /* Student enrollment cards */
+  studentSubjectCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    marginBottom: 14,
+    overflow: 'hidden'
+  },
+  studentSubjectCardWide: { flexDirection: 'row', alignItems: 'stretch' },
+  studentSubjectDetails: { flex: 1, minWidth: 0, padding: 18 },
+  studentSubjectHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  studentSubjectIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.goldSoft
+  },
+  studentSubjectTitleBlock: { flex: 1, minWidth: 0 },
+  studentSubjectCode: { color: COLORS.ink, fontSize: 17, fontWeight: '900' },
+  studentSubjectMeta: { marginTop: 4, color: COLORS.muted, fontSize: 12 },
+  studentSubjectDescription: { marginTop: 14, color: COLORS.ink, fontSize: 14, lineHeight: 21 },
+  studentSubjectActionPanel: {
+    padding: 16,
+    backgroundColor: COLORS.goldSoft,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line
+  },
+  studentSubjectActionPanelWide: {
+    width: 250,
+    justifyContent: 'center',
+    borderTopWidth: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: COLORS.line
+  },
+  studentSubjectStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  studentSubjectStatus: { color: COLORS.muted, fontSize: 12, fontWeight: '700' },
+  studentSubjectStatusEnrolled: { color: COLORS.success },
+  studentEnrollButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.brand,
+    borderWidth: 1.5,
+    borderColor: COLORS.brandDeep
+  },
+  studentEnrollButtonEnrolled: { backgroundColor: COLORS.surface, borderColor: COLORS.successLine },
+  studentEnrollButtonDisabled: { opacity: 0.9 },
+  studentEnrollButtonText: { color: COLORS.surface, fontSize: 13, fontWeight: '800' },
+  studentEnrollButtonTextEnrolled: { color: COLORS.success },
 
   /* Actions */
   actions: { flexDirection: 'row', gap: 8, marginTop: 8 },

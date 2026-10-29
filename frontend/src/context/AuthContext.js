@@ -64,8 +64,8 @@ export function AuthProvider({ children }) {
     return result;
   }, []);
 
-  const register = useCallback(async ({ name, email, password, program, profilePictureBase64 }) => {
-    const result = await apiRegister({ name, email, password, program, profilePictureBase64 });
+  const register = useCallback(async ({ firstName, middleName, lastName, name, email, password, program, profilePictureBase64 }) => {
+    const result = await apiRegister({ firstName, middleName, lastName, name, email, password, program, profilePictureBase64 });
     setToken(result.token);
     setUser(result.user);
     return result;

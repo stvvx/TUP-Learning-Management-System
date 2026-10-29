@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import AuthButton from '../../components/AuthButton';
@@ -10,6 +11,28 @@ import {
   apiGetProgramChairStudents,
   apiUpdateProgramChairStudentPlacement
 } from '../../api/client';
+
+// TUP palette, same as the other screens. Consider moving this to a shared theme file.
+const COLORS = {
+  brand: '#7B1113',
+  brandDeep: '#4A0A0C',
+  brandSoft: '#F6E4E4',
+  brandLine: '#EBC9A0',
+  gold: '#F2B705',
+  goldDeep: '#9A6B00',
+  goldSoft: '#FFF1BF',
+  paper: '#FFF9EE',
+  surface: '#FFFFFF',
+  ink: '#1F1416',
+  muted: '#6E6165',
+  faint: '#A39A9E',
+  line: '#E8E2E4',
+  success: '#1F7A4D',
+  successSoft: '#E3F4EA',
+  danger: '#B42318',
+  dangerSoft: '#FEF3F2',
+  dangerLine: '#FECDCA'
+};
 
 const YEAR_LEVEL_OPTIONS = [
   { label: 'First Year', value: 'First Year' },
@@ -41,32 +64,35 @@ function Stat({ value, label, tone }) {
 
 function Banner({ tone, children, onDismiss }) {
   const isError = tone === 'error';
+  const color = isError ? COLORS.danger : COLORS.success;
   return (
-    <View style={[styles.banner, isError ? styles.bannerError : styles.bannerSuccess]}>
-      <Text style={[styles.bannerText, isError ? styles.bannerTextError : styles.bannerTextSuccess]}>
-        {children}
-      </Text>
+    <View style={[styles.banner, isError ? styles.bannerError : styles.bannerSuccess]} accessibilityRole="alert">
+      <Ionicons name={isError ? 'alert-circle' : 'checkmark-circle'} size={20} color={color} />
+      <Text style={[styles.bannerText, { color }]}>{children}</Text>
       <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss message">
-        <Text style={[styles.bannerClose, isError ? styles.bannerTextError : styles.bannerTextSuccess]}>✕</Text>
+        <Ionicons name="close" size={18} color={color} />
       </Pressable>
     </View>
   );
 }
 
 function GroupHeader({ title, count, open, onToggle, tone }) {
+  const warn = tone === 'warn';
   return (
     <Pressable
       onPress={onToggle}
-      style={({ pressed }) => [styles.groupHeader, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.groupHeader, warn && styles.groupHeaderWarn, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
     >
-      <View style={[styles.groupAccent, tone === 'warn' && styles.groupAccentWarn]} />
-      <Text style={styles.groupTitle}>{title}</Text>
-      <View style={[styles.countPill, tone === 'warn' && styles.countPillWarn]}>
-        <Text style={[styles.countText, tone === 'warn' && styles.countTextWarn]}>{count}</Text>
+      <View style={[styles.groupIcon, warn && styles.groupIconWarn]}>
+        <Ionicons name={warn ? 'alert' : 'school'} size={16} color={warn ? COLORS.goldDeep : COLORS.surface} />
       </View>
-      <Text style={[styles.chevron, open && styles.chevronOpen]}>›</Text>
+      <Text style={styles.groupTitle}>{title}</Text>
+      <View style={[styles.countPill, warn && styles.countPillWarn]}>
+        <Text style={[styles.countText, warn && styles.countTextWarn]}>{count}</Text>
+      </View>
+      <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.brand} />
     </Pressable>
   );
 }
@@ -79,6 +105,7 @@ function StudentRow({
   expanded,
   dirty,
   saving,
+  isWide,
   onToggle,
   onChangeYear,
   onChangeSection,
@@ -91,7 +118,14 @@ function StudentRow({
   const placed = Boolean(student.yearLevel && student.sectionId);
 
   return (
-    <View style={[styles.card, expanded && styles.cardExpanded]}>
+    <View
+      style={[
+        styles.card,
+        isWide && styles.cardWide,
+        expanded && styles.cardExpanded,
+        expanded && isWide && styles.cardFull
+      ]}
+    >
       <Pressable
         onPress={onToggle}
         style={({ pressed }) => [styles.cardHeader, pressed && styles.pressed]}
@@ -129,7 +163,12 @@ function StudentRow({
             value={placement.sectionId}
             onSelect={onChangeSection}
           />
-          {dirty ? <Text style={styles.dirtyNote}>You have unsaved changes.</Text> : null}
+          {dirty ? (
+            <View style={styles.dirtyRow}>
+              <Ionicons name="alert-circle-outline" size={15} color={COLORS.goldDeep} />
+              <Text style={styles.dirtyNote}>You have unsaved changes.</Text>
+            </View>
+          ) : null}
           <AuthButton
             title={saving ? 'Saving…' : 'Save placement'}
             onPress={onSave}
@@ -145,6 +184,7 @@ function StudentRow({
 
 export default function PcStudentsScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const { user, token, isLoading } = useAuth();
   const [students, setStudents] = useState([]);
   const [sections, setSections] = useState([]);
@@ -246,6 +286,8 @@ export default function PcStudentsScreen() {
 
   if (isLoading || user?.role !== 'program_chair') return null;
 
+  const isWide = width >= 900;
+
   const renderStudent = (student) => {
     const placement = placements[student.id] || { yearLevel: '', sectionId: '' };
     const dirty =
@@ -261,6 +303,7 @@ export default function PcStudentsScreen() {
         expanded={expandedId === student.id}
         dirty={dirty}
         saving={savingId === student.id}
+        isWide={isWide}
         onToggle={() => setExpandedId((current) => (current === student.id ? null : student.id))}
         onChangeYear={(value) => setPlacementField(student.id, { yearLevel: value, sectionId: '' })}
         onChangeSection={(value) => setPlacementField(student.id, { sectionId: value })}
@@ -269,6 +312,9 @@ export default function PcStudentsScreen() {
     );
   };
 
+  // Phones: one column. Desktop: two-column grid of student cards.
+  const renderList = (list) => <View style={[styles.list, isWide && styles.listWide]}>{list.map(renderStudent)}</View>;
+
   const searching = query.trim().length > 0;
 
   return (
@@ -276,32 +322,55 @@ export default function PcStudentsScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.title}>Students</Text>
-      <StaffHeader role="programchair" activeRoute="/pc-students" />
-      <Text style={styles.subtitle}>
-        Tap a student to change their year level and section.
-      </Text>
-
-      <View style={styles.statsStrip}>
-        <Stat value={students.length} label="Students" />
-        <View style={styles.statDivider} />
-        <Stat value={placedCount} label="Placed" />
-        <View style={styles.statDivider} />
-        <Stat value={needsPlacementCount} label="Need placement" tone={needsPlacementCount ? 'warn' : undefined} />
+      {/* Page header */}
+      <View style={styles.pageHeader}>
+        <View style={styles.pageHeaderIcon}>
+          <Ionicons name="people" size={22} color={COLORS.brand} />
+        </View>
+        <View style={styles.pageHeaderText}>
+          <Text style={styles.title}>Students</Text>
+          <Text style={styles.pageSubtitle}>Tap a student to change their year level and section</Text>
+        </View>
+        <View style={styles.headerPill}>
+          <Text style={styles.headerPillText}>{students.length}</Text>
+        </View>
       </View>
 
-      <TextInput
-        style={styles.search}
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search by name or email"
-        placeholderTextColor="#8A94A6"
-        autoCapitalize="none"
-        autoCorrect={false}
-        clearButtonMode="while-editing"
-        returnKeyType="search"
-      />
+      <StaffHeader role="programchair" activeRoute="/pc-students" />
+
+      {/* Stats with hard offset shadow */}
+      <View style={styles.cardWrap}>
+        <View style={styles.cardShadow} />
+        <View style={styles.statsStrip}>
+          <Stat value={students.length} label="Students" />
+          <View style={styles.statDivider} />
+          <Stat value={placedCount} label="Placed" />
+          <View style={styles.statDivider} />
+          <Stat value={needsPlacementCount} label="Need placement" tone={needsPlacementCount ? 'warn' : undefined} />
+        </View>
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={18} color={COLORS.muted} />
+        <TextInput
+          style={styles.search}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search by name or email"
+          placeholderTextColor={COLORS.faint}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+        {query ? (
+          <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityLabel="Clear search">
+            <Ionicons name="close-circle" size={18} color={COLORS.faint} />
+          </Pressable>
+        ) : null}
+      </View>
 
       {error ? <Banner tone="error" onDismiss={() => setError('')}>{error}</Banner> : null}
       {message ? <Banner tone="success" onDismiss={() => setMessage('')}>{message}</Banner> : null}
@@ -315,7 +384,7 @@ export default function PcStudentsScreen() {
             open={!closedGroups.noYear}
             onToggle={() => toggleGroup('noYear')}
           />
-          {!closedGroups.noYear ? noYearStudents.map(renderStudent) : null}
+          {!closedGroups.noYear ? renderList(noYearStudents) : null}
         </View>
       ) : null}
 
@@ -335,23 +404,23 @@ export default function PcStudentsScreen() {
                   if (searching && !section.students.length) return null;
                   return (
                     <View key={sectionKey(section)}>
-                      <Text style={styles.sectionHeading}>
-                        {section.name}
-                        <Text style={styles.sectionCount}>{`  ${section.students.length}`}</Text>
-                      </Text>
+                      <View style={styles.sectionHeadingRow}>
+                        <Text style={styles.sectionHeading}>{section.name}</Text>
+                        <Text style={styles.sectionCount}>{section.students.length}</Text>
+                      </View>
                       {section.students.length
-                        ? section.students.map(renderStudent)
+                        ? renderList(section.students)
                         : <Text style={styles.empty}>No students in this section yet.</Text>}
                     </View>
                   );
                 })}
                 {group.unassigned.length ? (
                   <View>
-                    <Text style={[styles.sectionHeading, styles.sectionHeadingWarn]}>
-                      Not in a section
-                      <Text style={styles.sectionCount}>{`  ${group.unassigned.length}`}</Text>
-                    </Text>
-                    {group.unassigned.map(renderStudent)}
+                    <View style={styles.sectionHeadingRow}>
+                      <Text style={[styles.sectionHeading, styles.sectionHeadingWarn]}>Not in a section</Text>
+                      <Text style={styles.sectionCount}>{group.unassigned.length}</Text>
+                    </View>
+                    {renderList(group.unassigned)}
                   </View>
                 ) : null}
                 {!group.sections.length && !group.unassigned.length ? (
@@ -366,7 +435,10 @@ export default function PcStudentsScreen() {
       })}
 
       {searching && !visibleStudents.length ? (
-        <Text style={styles.noResults}>No students match “{query.trim()}”.</Text>
+        <View style={styles.emptyBox}>
+          <Ionicons name="search-outline" size={28} color={COLORS.faint} />
+          <Text style={styles.noResults}>No students match “{query.trim()}”.</Text>
+        </View>
       ) : null}
     </ScrollView>
   );
@@ -374,145 +446,214 @@ export default function PcStudentsScreen() {
 
 /* ---------- Styles ---------- */
 
-const COLORS = {
-  bg: '#F3F5F8',
-  surface: '#FFFFFF',
-  ink: '#172033',
-  muted: '#5B6577',
-  line: '#DDE2EA',
-  accent: '#8A1C2B',
-  accentSoft: '#F6E9EB',
-  ok: '#1F7A55',
-  okSoft: '#E4F3EC',
-  warn: '#B45309',
-  warnSoft: '#FDF0DC',
-  danger: '#B42318',
-  dangerSoft: '#FDECEA'
-};
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, backgroundColor: COLORS.paper },
   content: { padding: 20, paddingTop: 48, paddingBottom: 56 },
   pressed: { opacity: 0.7 },
 
-  title: { fontSize: 28, fontWeight: '800', color: COLORS.ink, letterSpacing: -0.5, marginBottom: 16 },
-  subtitle: { fontSize: 14, lineHeight: 20, color: COLORS.muted, marginTop: 4, marginBottom: 16 },
+  /* Page header */
+  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  pageHeaderIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  pageHeaderText: { flex: 1 },
+  title: { fontSize: 24, fontWeight: '900', color: COLORS.brand, letterSpacing: -0.5 },
+  pageSubtitle: { fontSize: 12, color: COLORS.muted, marginTop: 1 },
+  headerPill: {
+    minWidth: 34,
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
+    backgroundColor: COLORS.brand,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  headerPillText: { color: COLORS.surface, fontWeight: '800', fontSize: 14 },
 
+  /* Stats */
+  cardWrap: { marginBottom: 18, marginRight: 6 },
+  cardShadow: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: -6,
+    bottom: -6,
+    backgroundColor: COLORS.gold,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: COLORS.ink
+  },
   statsStrip: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.line,
-    paddingVertical: 14,
-    marginBottom: 14
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    paddingVertical: 14
   },
   stat: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 22, fontWeight: '800', color: COLORS.ink },
-  statValueWarn: { color: COLORS.warn },
-  statLabel: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: COLORS.line },
+  statValue: { fontSize: 24, fontWeight: '900', color: COLORS.brand },
+  statValueWarn: { color: COLORS.goldDeep },
+  statLabel: { fontSize: 12, fontWeight: '700', color: COLORS.muted, marginTop: 2 },
+  statDivider: { width: 1.5, backgroundColor: COLORS.line },
 
-  search: {
+  /* Search */
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.line,
-    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: COLORS.ink,
     marginBottom: 14
   },
+  search: { flex: 1, paddingVertical: 12, fontSize: 15, color: COLORS.ink, outlineStyle: 'none' },
 
+  /* Banners */
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 14
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1
   },
-  bannerError: { backgroundColor: COLORS.dangerSoft },
-  bannerSuccess: { backgroundColor: COLORS.okSoft },
-  bannerText: { flex: 1, fontSize: 14, fontWeight: '600', marginRight: 12 },
-  bannerTextError: { color: COLORS.danger },
-  bannerTextSuccess: { color: COLORS.ok },
-  bannerClose: { fontSize: 14, fontWeight: '700' },
+  bannerError: { backgroundColor: COLORS.dangerSoft, borderColor: COLORS.dangerLine },
+  bannerSuccess: { backgroundColor: COLORS.successSoft, borderColor: '#B7E1C8' },
+  bannerText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 
-  group: { marginTop: 10 },
+  /* Groups */
+  group: { marginTop: 12 },
   groupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderRadius: 16,
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 6
+    marginBottom: 10
   },
-  groupAccent: { width: 4, height: 22, borderRadius: 2, backgroundColor: COLORS.accent, marginRight: 10 },
-  groupAccentWarn: { backgroundColor: COLORS.warn },
-  groupTitle: { flex: 1, fontSize: 19, fontWeight: '700', color: COLORS.ink },
+  groupHeaderWarn: { backgroundColor: COLORS.goldSoft },
+  groupIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.brand,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  groupIconWarn: { backgroundColor: COLORS.gold },
+  groupTitle: { flex: 1, fontSize: 17, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.3 },
   countPill: {
     minWidth: 28,
     alignItems: 'center',
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: COLORS.accentSoft,
-    marginRight: 10
+    backgroundColor: COLORS.brandSoft
   },
-  countPillWarn: { backgroundColor: COLORS.warnSoft },
-  countText: { fontSize: 13, fontWeight: '700', color: COLORS.accent },
-  countTextWarn: { color: COLORS.warn },
-  chevron: { fontSize: 24, color: COLORS.muted, transform: [{ rotate: '0deg' }] },
-  chevronOpen: { transform: [{ rotate: '90deg' }] },
+  countPillWarn: { backgroundColor: COLORS.gold },
+  countText: { fontSize: 13, fontWeight: '800', color: COLORS.brand },
+  countTextWarn: { color: COLORS.brandDeep },
 
-  sectionHeading: { fontSize: 15, fontWeight: '700', color: COLORS.muted, marginTop: 10, marginBottom: 8, marginLeft: 2 },
-  sectionHeadingWarn: { color: COLORS.warn },
-  sectionCount: { fontWeight: '500', color: '#8A94A6' },
+  sectionHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 8,
+    marginLeft: 2
+  },
+  sectionHeading: { fontSize: 13, fontWeight: '800', color: COLORS.brand, letterSpacing: 0.6, textTransform: 'uppercase' },
+  sectionHeadingWarn: { color: COLORS.goldDeep },
+  sectionCount: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.brandDeep,
+    backgroundColor: COLORS.goldSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+    borderRadius: 999,
+    overflow: 'hidden'
+  },
 
+  /* Student cards: 1 column on phone, 2 on desktop */
+  list: { marginBottom: 6 },
+  listWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 2,
     borderColor: COLORS.line,
     marginBottom: 10,
     overflow: 'hidden'
   },
-  cardExpanded: { borderColor: COLORS.accent },
+  cardWide: { width: '49%', marginBottom: 0 },
+  cardFull: { width: '100%' },
+  cardExpanded: { borderColor: COLORS.ink },
   cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 14 },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.accentSoft,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12
   },
-  avatarWarn: { backgroundColor: COLORS.warnSoft },
-  avatarText: { fontSize: 14, fontWeight: '800', color: COLORS.accent },
-  avatarTextWarn: { color: COLORS.warn },
-  cardInfo: { flex: 1, marginRight: 10 },
-  name: { fontSize: 16, fontWeight: '700', color: COLORS.ink },
+  avatarWarn: { backgroundColor: COLORS.surface, borderStyle: 'dashed' },
+  avatarText: { fontSize: 14, fontWeight: '900', color: COLORS.brandDeep },
+  avatarTextWarn: { color: COLORS.goldDeep },
+  cardInfo: { flex: 1, minWidth: 0, marginRight: 10 },
+  name: { fontSize: 16, fontWeight: '800', color: COLORS.ink },
   email: { fontSize: 13, color: COLORS.muted, marginTop: 2 },
 
-  chip: { maxWidth: 120, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
-  chipOk: { backgroundColor: COLORS.okSoft },
-  chipWarn: { backgroundColor: COLORS.warnSoft },
-  chipText: { fontSize: 12, fontWeight: '700' },
-  chipTextOk: { color: COLORS.ok },
-  chipTextWarn: { color: COLORS.warn },
+  chip: { maxWidth: 120, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1.5 },
+  chipOk: { backgroundColor: COLORS.brand, borderColor: COLORS.ink },
+  chipWarn: { backgroundColor: COLORS.goldSoft, borderColor: COLORS.ink },
+  chipText: { fontSize: 12, fontWeight: '800' },
+  chipTextOk: { color: COLORS.surface },
+  chipTextWarn: { color: COLORS.brandDeep },
 
   editor: {
     paddingHorizontal: 14,
     paddingBottom: 16,
-    paddingTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.line,
-    backgroundColor: '#FAFBFC'
+    paddingTop: 12,
+    borderTopWidth: 2,
+    borderTopColor: COLORS.goldSoft,
+    backgroundColor: COLORS.paper
   },
-  dirtyNote: { fontSize: 13, color: COLORS.warn, marginVertical: 8 },
+  dirtyRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 8 },
+  dirtyNote: { fontSize: 13, fontWeight: '600', color: COLORS.goldDeep },
 
-  empty: { color: COLORS.muted, fontSize: 14, marginBottom: 10, marginLeft: 2 },
-  noResults: { textAlign: 'center', color: COLORS.muted, fontSize: 15, marginTop: 24 }
+  empty: { color: COLORS.muted, fontSize: 13, marginBottom: 10, marginLeft: 2 },
+  emptyBox: {
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: COLORS.line,
+    borderStyle: 'dashed',
+    padding: 24,
+    marginTop: 20
+  },
+  noResults: { textAlign: 'center', color: COLORS.muted, fontSize: 14 }
 });

@@ -88,6 +88,7 @@ let subjectsCollection;
 let enrollmentsCollection;
 let assignmentsCollection;
 let lessonsCollection;
+let lessonCompletionsCollection;
 let quizzesCollection;
 let quizSubmissionsCollection;
 let chatMessagesCollection;
@@ -187,6 +188,53 @@ function serializeChatMessage(message) {
     senderRole: message.senderRole,
     text: message.text,
     createdAt: message.createdAt
+  };
+}
+
+function getUserNameFields(user) {
+  if (user.firstName || user.middleName || user.lastName) {
+    return {
+      firstName: user.firstName || '',
+      middleName: user.middleName || '',
+      lastName: user.lastName || ''
+    };
+  }
+
+  // Keep older records usable until their names are updated to structured fields.
+  const tokens = (user.name || '').trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: tokens[0] || '',
+    middleName: tokens.length > 2 ? tokens.slice(1, -1).join(' ') : '',
+    lastName: tokens.length > 1 ? tokens[tokens.length - 1] : ''
+  };
+}
+
+async function serializeAuthUser(user) {
+  let studentProfile = null;
+  let yearSection = null;
+
+  if ((user.role || 'student') === 'student') {
+    studentProfile = await studentsCollection.findOne({ userId: user._id });
+    if (studentProfile?.yearLevel && studentProfile.sectionId) {
+      const section = await sectionsCollection.findOne({ _id: studentProfile.sectionId });
+      if (section?.name) {
+        yearSection = `${studentProfile.yearLevel} · ${section.name}`;
+      }
+    }
+  }
+
+  const nameFields = getUserNameFields(user);
+  return {
+    id: user._id.toString(),
+    ...nameFields,
+    name: [nameFields.firstName, nameFields.middleName, nameFields.lastName].filter(Boolean).join(' '),
+    email: user.email,
+    role: user.role || 'student',
+    program: user.program || null,
+    profilePicture: user.profilePicture || null,
+    yearLevel: studentProfile?.yearLevel || null,
+    yearSection,
+    createdAt: user.createdAt
   };
 }
 
@@ -318,10 +366,30 @@ app.get('/api/programs', async (req, res) => {
 // Register
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password, program, profilePictureBase64 } = req.body;
+    const {
+      firstName: rawFirstName,
+      middleName: rawMiddleName,
+      lastName: rawLastName,
+      name: legacyName,
+      email,
+      password,
+      program,
+      profilePictureBase64
+    } = req.body;
+    const legacyTokens = typeof legacyName === 'string'
+      ? legacyName.trim().split(/\s+/).filter(Boolean)
+      : [];
+    const firstName = typeof rawFirstName === 'string' ? rawFirstName.trim() : legacyTokens[0] || '';
+    const middleName = typeof rawMiddleName === 'string'
+      ? rawMiddleName.trim()
+      : legacyTokens.length > 2 ? legacyTokens.slice(1, -1).join(' ') : '';
+    const lastName = typeof rawLastName === 'string'
+      ? rawLastName.trim()
+      : legacyTokens.length > 1 ? legacyTokens[legacyTokens.length - 1] : '';
+    const name = [firstName, middleName, lastName].filter(Boolean).join(' ');
 
-    if (!name || typeof name !== 'string' || name.trim().length < 2) {
-      return res.status(400).json({ error: 'Please enter a valid name (at least 2 characters).' });
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name are required.' });
     }
 
     if (!isValidEmail(email)) {
@@ -354,7 +422,10 @@ app.post('/api/auth/register', async (req, res) => {
       : null;
 
     const newUser = {
-      name: name.trim(),
+      name,
+      firstName,
+      middleName,
+      lastName,
       email: normalizedEmail,
       password: hashedPassword,
       role: 'student',
@@ -380,6 +451,9 @@ app.post('/api/auth/register', async (req, res) => {
         userId,
         email: newUser.email,
         name: newUser.name,
+        firstName: newUser.firstName,
+        middleName: newUser.middleName,
+        lastName: newUser.lastName,
         role: newUser.role
       },
       jwtSecret,
@@ -389,15 +463,7 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(201).json({
       message: 'Account created successfully',
       token,
-      user: {
-        id: userId,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
-        program: newUser.program,
-        profilePicture: newUser.profilePicture,
-        createdAt: newUser.createdAt
-      }
+      user: await serializeAuthUser({ ...newUser, _id: result.insertedId })
     });
   } catch (error) {
     console.error('Error during registration:', error);
@@ -451,13 +517,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.json({
       message: 'Login successful',
       token,
-      user: {
-        id: userId,
-        name: user.name,
-        email: user.email,
-        role: user.role || 'student',
-        createdAt: user.createdAt
-      }
+      user: await serializeAuthUser(user)
     });
   } catch (error) {
     console.error('Error during login:', error);
@@ -485,18 +545,42 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User profile not found.' });
     }
 
-    return res.json({
-      user: {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        role: user.role || 'student',
-        createdAt: user.createdAt
-      }
-    });
+    return res.json({ user: await serializeAuthUser(user) });
   } catch (error) {
     console.error('Error fetching user profile:', error);
     return res.status(500).json({ error: 'Failed to fetch user profile.' });
+  }
+});
+
+app.put('/api/auth/me/profile-picture', authenticateToken, async (req, res) => {
+  try {
+    const profilePicture = typeof req.body.profilePicture === 'string'
+      ? req.body.profilePicture
+      : '';
+    const validImageDataUri = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(profilePicture);
+
+    if (!validImageDataUri) {
+      return res.status(400).json({ error: 'Choose a valid JPEG, PNG, or WebP profile photo.' });
+    }
+    if (profilePicture.length > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Profile photo must be smaller than 7.5 MB.' });
+    }
+    if (!ObjectId.isValid(req.user.userId)) {
+      return res.status(401).json({ error: 'Invalid authenticated user.' });
+    }
+
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(req.user.userId) },
+      { $set: { profilePicture, updatedAt: new Date() } }
+    );
+    if (!result.matchedCount) {
+      return res.status(404).json({ error: 'User profile not found.' });
+    }
+
+    return res.json({ profilePicture });
+  } catch (error) {
+    console.error('Error saving profile picture:', error);
+    return res.status(500).json({ error: 'Failed to save profile picture.' });
   }
 });
 
@@ -689,6 +773,7 @@ app.get('/api/program-chair/users', authenticateToken, requireProgramChair, asyn
     return res.json({
       users: users.map((user) => ({
         id: user._id.toString(),
+        ...getUserNameFields(user),
         name: user.name,
         email: user.email,
         role: user.role || 'student'
@@ -710,6 +795,7 @@ app.get('/api/program-chair/students', authenticateToken, requireProgramChair, a
         const profile = profileByUserId.get(student._id.toString());
         return {
           id: student._id.toString(),
+          ...getUserNameFields(student),
           name: student.name,
           email: student.email,
           yearLevel: profile?.yearLevel || null,
@@ -1197,7 +1283,7 @@ app.get('/api/teaching/quizzes/:quizId/submissions', authenticateToken, requireT
       return res.status(404).json({ error: 'Quiz not found.' });
     }
 
-    if (!await hasTeachingAssignment(req.user.userId, quiz.subjectId.toString())) {
+    if (!await hasTeachingAssignment(req.user.userId, quiz.subjectId.toString(), req.user.role)) {
       return res.status(403).json({ error: 'You can only view submissions for your assigned subjects.' });
     }
 
@@ -1223,6 +1309,7 @@ app.get('/api/teaching/quizzes/:quizId/submissions', authenticateToken, requireT
         id: submission._id.toString(),
         studentId: submission.studentId.toString(),
         studentName: studentsById.get(submission.studentId.toString())?.name || 'Unknown student',
+        ...getUserNameFields(studentsById.get(submission.studentId.toString()) || { name: 'Unknown student' }),
         score: submission.score,
         total: submission.total,
         percentage: submission.percentage,
@@ -1493,15 +1580,72 @@ app.delete('/api/teaching/lessons/:lessonId', authenticateToken, requireTeaching
 
 app.get('/api/student/lessons', authenticateToken, requireStudent, async (req, res) => {
   try {
-    const enrollments = await enrollmentsCollection.find({ studentId: new ObjectId(req.user.userId) }).toArray();
+    const studentId = new ObjectId(req.user.userId);
+    const enrollments = await enrollmentsCollection.find({ studentId }).toArray();
     const subjectIds = enrollments.map((enrollment) => enrollment.subjectId);
     const lessons = subjectIds.length
       ? await lessonsCollection.find({ subjectId: { $in: subjectIds } }).sort({ updatedAt: -1 }).toArray()
       : [];
-    return res.json({ lessons: lessons.map(serializeLesson) });
+    const completions = lessons.length
+      ? await lessonCompletionsCollection.find({
+          studentId,
+          lessonId: { $in: lessons.map((lesson) => lesson._id) }
+        }).toArray()
+      : [];
+    const completedByLessonId = new Map(
+      completions.map((completion) => [completion.lessonId.toString(), completion])
+    );
+    return res.json({
+      lessons: lessons.map((lesson) => {
+        const completion = completedByLessonId.get(lesson._id.toString());
+        return {
+          ...serializeLesson(lesson),
+          completed: Boolean(completion?.completed),
+          completedAt: completion?.completedAt || null
+        };
+      })
+    });
   } catch (error) {
     console.error('Error fetching student lessons:', error);
     return res.status(500).json({ error: 'Failed to fetch lessons.' });
+  }
+});
+
+app.put('/api/student/lessons/:lessonId/completion', authenticateToken, requireStudent, async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    const { completed } = req.body;
+    if (!ObjectId.isValid(lessonId) || typeof completed !== 'boolean') {
+      return res.status(400).json({ error: 'A valid lesson and completion status are required.' });
+    }
+
+    const studentId = new ObjectId(req.user.userId);
+    const lessonObjectId = new ObjectId(lessonId);
+    const lesson = await lessonsCollection.findOne({ _id: lessonObjectId });
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found.' });
+
+    const enrollment = await enrollmentsCollection.findOne({
+      studentId,
+      subjectId: lesson.subjectId
+    });
+    if (!enrollment) {
+      return res.status(403).json({ error: 'You must be enrolled in this lesson subject.' });
+    }
+
+    const completedAt = completed ? new Date() : null;
+    await lessonCompletionsCollection.updateOne(
+      { studentId, lessonId: lessonObjectId },
+      {
+        $set: { completed, completedAt, updatedAt: new Date() },
+        $setOnInsert: { studentId, lessonId: lessonObjectId, createdAt: new Date() }
+      },
+      { upsert: true }
+    );
+
+    return res.json({ completed, completedAt });
+  } catch (error) {
+    console.error('Error updating lesson completion:', error);
+    return res.status(500).json({ error: 'Failed to update lesson completion.' });
   }
 });
 
@@ -1677,6 +1821,7 @@ app.get('/api/admin/users', authenticateToken, requireSuperAdmin, async (req, re
     return res.json({
       users: users.map((user) => ({
         id: user._id.toString(),
+        ...getUserNameFields(user),
         name: user.name,
         email: user.email,
         role: user.role || 'student',
@@ -1862,6 +2007,7 @@ async function start() {
   enrollmentsCollection = database.collection('enrollments');
   assignmentsCollection = database.collection('subjectAssignments');
   lessonsCollection = database.collection('lessons');
+  lessonCompletionsCollection = database.collection('lessonCompletions');
   quizzesCollection = database.collection('quizzes');
   quizSubmissionsCollection = database.collection('quizSubmissions');
   chatMessagesCollection = database.collection('chatMessages');
@@ -1888,6 +2034,7 @@ async function start() {
   await quizSubmissionsCollection.createIndex({ quizId: 1, studentId: 1 }, { unique: true });
   await chatMessagesCollection.createIndex({ createdAt: -1 });
   await studentsCollection.createIndex({ userId: 1 }, { unique: true });
+  await lessonCompletionsCollection.createIndex({ studentId: 1, lessonId: 1 }, { unique: true });
   await facultyCollection.createIndex({ userId: 1 }, { unique: true });
   await programChairsCollection.createIndex({ userId: 1 }, { unique: true });
   await programsCollection.createIndex({ name: 1 }, { unique: true });

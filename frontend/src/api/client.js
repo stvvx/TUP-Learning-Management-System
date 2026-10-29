@@ -139,10 +139,10 @@ async function request(endpoint, options = {}) {
 /**
  * Register a new user
  */
-export async function apiRegister({ name, email, password, program, profilePictureBase64 }) {
+export async function apiRegister({ firstName, middleName, lastName, name, email, password, program, profilePictureBase64 }) {
   const result = await request('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ name, email, password, program, profilePictureBase64 })
+    body: JSON.stringify({ firstName, middleName, lastName, name, email, password, program, profilePictureBase64 })
   });
 
   if (result.token && result.user) {
@@ -183,6 +183,15 @@ export async function apiGetCurrentUser(token) {
   });
 
   return result.user;
+}
+
+export async function apiUpdateProfilePicture(token, profilePicture) {
+  const result = await request('/api/auth/me/profile-picture', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ profilePicture })
+  });
+  return result.profilePicture;
 }
 
 export async function apiGetDashboardStats(token) {
@@ -344,6 +353,14 @@ export async function apiGetStudentLessons(token) {
     headers: { Authorization: 'Bearer ' + token }
   });
   return result.lessons;
+}
+
+export async function apiSetStudentLessonCompletion(token, lessonId, completed) {
+  return request(`/api/student/lessons/${lessonId}/completion`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ completed })
+  });
 }
 
 export async function apiGetStudentQuizzes(token) {

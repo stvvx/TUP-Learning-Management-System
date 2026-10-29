@@ -9,18 +9,18 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
-import StudentPage from '../../components/(Students)/StudentPage';
 import StudentHeader from '../../components/(Students)/StudentHeader';
 import StaffHeader from '../../components/StaffHeader';
 import AuthButton from '../../components/AuthButton';
 import AuthInput from '../../components/AuthInput';
 import DropdownSelect from '../../components/DropdownSelect';
-import { API_BASE_URL, apiCreateLesson, apiDeleteLesson, apiGetStudentLessons, apiGetTeachingLessons, apiGetTeachingSubjects, apiReplaceLessonFile, apiUpdateLesson, apiUploadLesson } from '../../api/client';
+import { API_BASE_URL, apiCreateLesson, apiDeleteLesson, apiGetStudentLessons, apiGetTeachingLessons, apiGetTeachingSubjects, apiReplaceLessonFile, apiSetStudentLessonCompletion, apiUpdateLesson, apiUploadLesson } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
 // TUP palette, same as the other screens. Consider moving this to a shared theme file.
@@ -448,10 +448,12 @@ function TeachingLessonsScreen() {
 
 function StudentLessonsScreen() {
   const { token, isLoading } = useAuth();
+  const { width } = useWindowDimensions();
   const [lessons, setLessons] = useState([]);
   const [error, setError] = useState('');
   const [isLoadingLessons, setIsLoadingLessons] = useState(true);
   const [viewingLesson, setViewingLesson] = useState(null);
+  const [updatingCompletionId, setUpdatingCompletionId] = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -464,8 +466,27 @@ function StudentLessonsScreen() {
       .finally(() => setIsLoadingLessons(false));
   }, [token]);
 
+  const toggleLessonCompletion = async (lesson) => {
+    if (!token || updatingCompletionId) return;
+    const completed = !lesson.completed;
+    setUpdatingCompletionId(lesson.id);
+    setError('');
+    try {
+      const result = await apiSetStudentLessonCompletion(token, lesson.id, completed);
+      setLessons((current) => current.map((item) =>
+        item.id === lesson.id
+          ? { ...item, completed: result.completed, completedAt: result.completedAt }
+          : item
+      ));
+    } catch (err) {
+      setError(err.message || 'Could not update lesson progress. Please try again.');
+    } finally {
+      setUpdatingCompletionId(null);
+    }
+  };
+
   if (isLoading) return null;
-  if (error) return <StudentPage activeRoute="/lessons" title="Lessons" icon="book-outline" message={error} />;
+  const isWideLayout = width >= 820;
   return (
     <ScrollView
       style={styles.container}
@@ -479,6 +500,8 @@ function StudentLessonsScreen() {
       />
       <StudentHeader activeRoute="/lessons" />
 
+      {error ? <Banner kind="error">{error}</Banner> : null}
+
       {isLoadingLessons ? (
         <ActivityIndicator style={{ paddingVertical: 28 }} color={COLORS.brand} />
       ) : lessons.length === 0 ? (
@@ -486,17 +509,86 @@ function StudentLessonsScreen() {
       ) : lessons.map((lesson) => {
         const isViewingLesson = viewingLesson?.id === lesson.id;
         return (
-          <View key={lesson.id} style={styles.item}>
-            <View style={styles.itemTopRow}>
-              <KindBadge lesson={lesson} />
+          <View key={lesson.id} style={[styles.studentLessonRow, isWideLayout && styles.studentLessonRowWide]}>
+            <View style={styles.studentLessonMain}>
+              <View style={styles.studentLessonHeading}>
+                <View style={styles.studentLessonIcon}>
+                  <Ionicons name="document-text-outline" size={22} color={COLORS.brand} />
+                </View>
+                <View style={styles.studentLessonTitleBlock}>
+                  <Text style={styles.studentLessonTitle}>{lesson.title}</Text>
+                  <Text style={styles.studentLessonMeta}>
+                    {lesson.createdAt
+                      ? `Published ${new Date(lesson.createdAt).toLocaleDateString()}`
+                      : 'Published lesson'}
+                    {' · '}{getLessonSummary(lesson)}
+                  </Text>
+                </View>
+                <KindBadge lesson={lesson} />
+              </View>
+              {lesson.description ? <Text style={styles.studentLessonDescription}>{lesson.description}</Text> : null}
+              <View style={styles.studentLessonDivider} />
+              <View style={styles.studentLessonActions}>
+                <Text style={styles.studentLessonMaterialLabel}>Lesson material</Text>
+                <TouchableOpacity
+                  style={styles.openLessonButton}
+                  onPress={() => setViewingLesson(lesson)}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View lesson ${lesson.title}`}
+                >
+                  <Ionicons name="open-outline" size={16} color={COLORS.brand} />
+                  <Text style={styles.openLessonButtonText}>View lesson</Text>
+                </TouchableOpacity>
+              </View>
+              {isViewingLesson ? <LessonViewer lesson={lesson} onClose={() => setViewingLesson(null)} /> : null}
             </View>
-            <Text style={styles.itemTitle}>{lesson.title}</Text>
-            <Text style={styles.itemText}>{getLessonSummary(lesson)}</Text>
-            {lesson.description ? <Text style={styles.itemText}>{lesson.description}</Text> : null}
-            <View style={styles.itemButtonGap}>
-              <AuthButton title="View lesson" variant="outline" onPress={() => setViewingLesson(lesson)} />
+
+            <View style={[styles.studentWorkPanel, isWideLayout && styles.studentWorkPanelWide]}>
+              <View style={styles.studentWorkHeader}>
+                <Text style={styles.studentWorkTitle}>Your work</Text>
+                <Text style={[styles.studentWorkStatus, lesson.completed && styles.studentWorkStatusDone]}>
+                  {lesson.completed ? 'Done' : 'To do'}
+                </Text>
+              </View>
+              <View style={styles.studentWorkStatusRow}>
+                <View style={[styles.studentWorkStatusIcon, lesson.completed && styles.studentWorkStatusIconDone]}>
+                  <Ionicons
+                    name={lesson.completed ? 'checkmark' : 'time-outline'}
+                    size={18}
+                    color={lesson.completed ? COLORS.success : COLORS.muted}
+                  />
+                </View>
+                <Text style={styles.studentWorkHint}>
+                  {lesson.completed ? 'You marked this lesson as done.' : 'Review the lesson, then mark it as done.'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.markDoneButton, lesson.completed && styles.markDoneButtonCompleted]}
+                onPress={() => toggleLessonCompletion(lesson)}
+                disabled={Boolean(updatingCompletionId)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={lesson.completed ? 'Undo mark as done' : 'Mark lesson as done'}
+              >
+                {updatingCompletionId === lesson.id ? (
+                  <ActivityIndicator size="small" color={lesson.completed ? COLORS.brand : COLORS.surface} />
+                ) : (
+                  <Ionicons
+                    name={lesson.completed ? 'refresh-outline' : 'checkmark'}
+                    size={18}
+                    color={lesson.completed ? COLORS.brand : COLORS.surface}
+                  />
+                )}
+                <Text style={[styles.markDoneButtonText, lesson.completed && styles.markDoneButtonTextCompleted]}>
+                  {updatingCompletionId === lesson.id
+                    ? 'Saving…'
+                    : lesson.completed
+                      ? 'Undo mark as done'
+                      : 'Mark as done'}
+                </Text>
+              </TouchableOpacity>
             </View>
-            {isViewingLesson ? <LessonViewer lesson={lesson} onClose={() => setViewingLesson(null)} /> : null}
           </View>
         );
       })}
@@ -956,6 +1048,94 @@ const styles = StyleSheet.create({
   deleteButton: { borderColor: COLORS.danger },
   deleteDisabled: { opacity: 0.6 },
   deleteText: { color: COLORS.danger },
+
+  /* Student lesson details and Classroom-style work panel */
+  studentLessonRow: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    marginBottom: 14,
+    overflow: 'hidden'
+  },
+  studentLessonRowWide: { flexDirection: 'row', alignItems: 'stretch' },
+  studentLessonMain: { flex: 1, minWidth: 0, padding: 18 },
+  studentLessonHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  studentLessonIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.goldSoft,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  studentLessonTitleBlock: { flex: 1, minWidth: 0 },
+  studentLessonTitle: { fontSize: 18, fontWeight: '800', color: COLORS.ink },
+  studentLessonMeta: { marginTop: 4, color: COLORS.muted, fontSize: 12 },
+  studentLessonDescription: { marginTop: 16, color: COLORS.ink, fontSize: 14, lineHeight: 21 },
+  studentLessonDivider: { height: 1, backgroundColor: COLORS.line, marginTop: 18, marginBottom: 12 },
+  studentLessonActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  studentLessonMaterialLabel: { color: COLORS.muted, fontSize: 12, fontWeight: '700' },
+  openLessonButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: COLORS.brandLine,
+    backgroundColor: COLORS.surface
+  },
+  openLessonButtonText: { color: COLORS.brand, fontSize: 13, fontWeight: '800' },
+  studentWorkPanel: {
+    padding: 16,
+    backgroundColor: COLORS.goldSoft,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line
+  },
+  studentWorkPanelWide: {
+    width: 286,
+    justifyContent: 'center',
+    borderTopWidth: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: COLORS.line
+  },
+  studentWorkHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  studentWorkTitle: { color: COLORS.ink, fontSize: 17, fontWeight: '800' },
+  studentWorkStatus: { color: COLORS.danger, fontSize: 13, fontWeight: '700' },
+  studentWorkStatusDone: { color: COLORS.success },
+  studentWorkStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14, marginBottom: 14 },
+  studentWorkStatusIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  studentWorkStatusIconDone: { backgroundColor: COLORS.successSoft },
+  studentWorkHint: { flex: 1, color: COLORS.muted, fontSize: 12, lineHeight: 17 },
+  markDoneButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.brand,
+    borderWidth: 1.5,
+    borderColor: COLORS.brandDeep
+  },
+  markDoneButtonCompleted: { backgroundColor: COLORS.surface, borderColor: COLORS.brandLine },
+  markDoneButtonText: { color: COLORS.surface, fontSize: 13, fontWeight: '800' },
+  markDoneButtonTextCompleted: { color: COLORS.brand },
 
   /* Viewer */
   viewer: {

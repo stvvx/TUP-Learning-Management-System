@@ -46,7 +46,9 @@ export default function RegisterScreen({ onNavigate }) {
   const insets = useSafeAreaInsets();
   const { register } = useAuth();
 
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -167,11 +169,15 @@ export default function RegisterScreen({ onNavigate }) {
 
   const validate = () => {
     const newErrors = {};
-    const trimmedName = name.trim();
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
     const trimmedEmail = email.trim();
 
-    if (!trimmedName || trimmedName.length < 2) {
-      newErrors.name = 'Enter your full name (at least 2 characters)';
+    if (!trimmedFirstName) {
+      newErrors.firstName = 'Enter your first name';
+    }
+    if (!trimmedLastName) {
+      newErrors.lastName = 'Enter your last name';
     }
 
     if (!trimmedEmail) {
@@ -205,7 +211,9 @@ export default function RegisterScreen({ onNavigate }) {
     setIsSubmitting(true);
     try {
       await register({
-        name: name.trim(),
+        firstName: firstName.trim(),
+        middleName: middleName.trim(),
+        lastName: lastName.trim(),
         email: email.trim(),
         password,
         program: typeof program === 'string' ? program.trim() : program,
@@ -328,17 +336,43 @@ export default function RegisterScreen({ onNavigate }) {
 
             {/* Fields */}
             <AuthInput
-              label="Full name"
+              label="Last Name"
               icon="person-outline"
-              placeholder="e.g. Juan Dela Cruz"
-              value={name}
+              placeholder="Enter your last name"
+              value={lastName}
               onChangeText={(text) => {
-                setName(text);
-                if (errors.name) setErrors((prev) => ({ ...prev, name: null }));
+                setLastName(text);
+                if (errors.lastName) setErrors((prev) => ({ ...prev, lastName: null }));
                 if (serverError) setServerError('');
               }}
               autoCapitalize="words"
-              error={errors.name}
+              error={errors.lastName}
+            />
+
+            <AuthInput
+              label="Middle Name (optional)"
+              icon="person-outline"
+              placeholder="Enter your middle name"
+              value={middleName}
+              onChangeText={(text) => {
+                setMiddleName(text);
+                if (serverError) setServerError('');
+              }}
+              autoCapitalize="words"
+            />
+
+            <AuthInput
+              label="First Name"
+              icon="person-outline"
+              placeholder="Enter your first name"
+              value={firstName}
+              onChangeText={(text) => {
+                setFirstName(text);
+                if (errors.firstName) setErrors((prev) => ({ ...prev, firstName: null }));
+                if (serverError) setServerError('');
+              }}
+              autoCapitalize="words"
+              error={errors.firstName}
             />
 
             <AuthInput
