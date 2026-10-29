@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -17,6 +18,9 @@ import { useAuth } from '../context/AuthContext';
 import AuthInput from '../components/AuthInput';
 import AuthButton from '../components/AuthButton';
 import { API_BASE_URL } from '../api/client';
+
+// Students only type the part before this; it is added automatically.
+const EMAIL_DOMAIN = '@tup.edu.ph';
 
 // TUP palette: deep maroon + gold on warm cream. Chunky ink outlines for the campus-zine feel.
 const COLORS = {
@@ -42,11 +46,12 @@ export default function LoginScreen({ onNavigate }) {
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [emailFocused, setEmailFocused] = useState(false);
 
   const navigateTo = (route) => {
     if (onNavigate) {
@@ -64,14 +69,19 @@ export default function LoginScreen({ onNavigate }) {
     }
   };
 
+  // Keep only the part before "@" and drop spaces, so pasting a full email also works.
+  const handleUsernameChange = (text) => {
+    const cleaned = text.split('@')[0].replace(/\s/g, '');
+    setUsername(cleaned);
+    if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
+    if (serverError) setServerError('');
+  };
+
   const validate = () => {
     const newErrors = {};
-    const trimmedEmail = email.trim();
 
-    if (!trimmedEmail) {
-      newErrors.email = 'Enter your email address';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      newErrors.email = 'Enter a valid email address';
+    if (!username.trim()) {
+      newErrors.email = 'Enter your email username';
     }
 
     if (!password) {
@@ -88,7 +98,7 @@ export default function LoginScreen({ onNavigate }) {
 
     setIsSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await login(`${username.trim()}${EMAIL_DOMAIN}`, password);
       replaceTo('/dashboard');
     } catch (err) {
       console.log('Login failed:', err);
@@ -103,11 +113,13 @@ export default function LoginScreen({ onNavigate }) {
   };
 
   const handleForgotPassword = () => {
-    Alert.alert(
-      'Forgot your password? 😅',
-      "It happens to the best of us. Message your LMS administrator and they'll reset it for you.",
-      [{ text: 'Got it' }]
-    );
+    const title = 'Forgot your password? 😅';
+    const body = "It happens to the best of us. Message your LMS administrator and they'll reset it for you.";
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${body}`);
+    } else {
+      Alert.alert(title, body, [{ text: 'Got it' }]);
+    }
   };
 
   return (
@@ -141,7 +153,7 @@ export default function LoginScreen({ onNavigate }) {
 
           <View style={styles.brandRow}>
             <View style={styles.logoBadge}>
-              <Ionicons name="school" size={24} color={COLORS.brand} />
+              <Ionicons name="settings" size={28} color={COLORS.brand} />
             </View>
             <View style={styles.brandText}>
               <Text style={styles.brandTitle} numberOfLines={2}>
@@ -178,20 +190,37 @@ export default function LoginScreen({ onNavigate }) {
               </View>
             ) : null}
 
-            <AuthInput
-              label="School email"
-              icon="mail-outline"
-              placeholder="you@tup.edu.ph"
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
-                if (serverError) setServerError('');
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              error={errors.email}
-            />
+            {/* Email: only the username is typed, the domain is fixed */}
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>School email</Text>
+              <View
+                style={[
+                  styles.emailRow,
+                  emailFocused && styles.emailRowFocused,
+                  errors.email && styles.emailRowError
+                ]}
+              >
+                <Ionicons name="mail-outline" size={20} color={COLORS.muted} />
+                <TextInput
+                  style={styles.emailInput}
+                  value={username}
+                  onChangeText={handleUsernameChange}
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
+                  placeholder="username"
+                  placeholderTextColor={COLORS.faint}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                  accessibilityLabel="School email username"
+                />
+                <View style={styles.domainChip}>
+                  <Text style={styles.domainText}>{EMAIL_DOMAIN}</Text>
+                </View>
+              </View>
+              {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
+            </View>
 
             <AuthInput
               label="Password"
@@ -297,9 +326,9 @@ const styles = StyleSheet.create({
     marginBottom: 20
   },
   logoBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: COLORS.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -391,6 +420,63 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '500'
   },
+
+  /* Email field with fixed domain */
+  fieldWrap: {
+    marginBottom: 16
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.ink,
+    marginBottom: 6
+  },
+  emailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.line,
+    borderRadius: 14,
+    paddingLeft: 14,
+    paddingRight: 6,
+    minHeight: 50
+  },
+  emailRowFocused: {
+    borderColor: COLORS.brand
+  },
+  emailRowError: {
+    borderColor: COLORS.danger
+  },
+  emailInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: COLORS.ink,
+    outlineStyle: 'none'
+  },
+  domainChip: {
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 1.5,
+    borderColor: COLORS.ink,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  domainText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.brandDeep
+  },
+  fieldError: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.danger
+  },
+
   forgotPassword: {
     alignSelf: 'flex-end',
     marginTop: 2,
@@ -401,8 +487,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.brand
   },
+  // Theme the Sign in button (maroon with ink outline instead of blue)
   submitButton: {
-    marginTop: 2
+    marginTop: 2,
+    backgroundColor: COLORS.brand,
+    borderColor: COLORS.ink,
+    borderWidth: 2
   },
 
   /* Footer */
