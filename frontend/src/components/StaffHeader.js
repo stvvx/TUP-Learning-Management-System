@@ -11,6 +11,7 @@ const ITEMS = {
   ],
   faculty: [
     { label: 'Home', icon: 'home-outline', route: '/dashboard' },
+    { label: 'Message', icon: 'chatbubble-ellipses-outline', route: '/message' },
     { label: 'Subjects', icon: 'library-outline', route: '/subjects' },
     { label: 'Lessons', icon: 'book-outline', route: '/lessons' },
     { label: 'Exams', icon: 'document-text-outline', route: '/exams' },
@@ -18,6 +19,7 @@ const ITEMS = {
   ],
   programchair: [
     { label: 'Home', icon: 'home-outline', route: '/dashboard' },
+    { label: 'Message', icon: 'chatbubble-ellipses-outline', route: '/message' },
     { label: 'Sections', icon: 'layers-outline', route: '/pc-courses' },
     { label: 'Students', icon: 'people-outline', route: '/pc-students' },
     { label: 'Subjects', icon: 'library-outline', route: '/subjects' },

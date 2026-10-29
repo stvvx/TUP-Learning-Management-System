@@ -90,6 +90,7 @@ let assignmentsCollection;
 let lessonsCollection;
 let quizzesCollection;
 let quizSubmissionsCollection;
+let chatMessagesCollection;
 let studentsCollection;
 let facultyCollection;
 let programChairsCollection;
@@ -176,6 +177,108 @@ function serializeQuiz(quiz, includeAnswers = false) {
     createdAt: quiz.createdAt,
     updatedAt: quiz.updatedAt
   };
+}
+
+function serializeChatMessage(message) {
+  return {
+    id: message._id.toString(),
+    senderId: message.senderId.toString(),
+    senderName: message.senderName,
+    senderRole: message.senderRole,
+    text: message.text,
+    createdAt: message.createdAt
+  };
+}
+
+async function getChatContacts(userId, role) {
+  const currentUserId = new ObjectId(userId);
+
+  if (role === 'student') {
+    const [profile, enrollments] = await Promise.all([
+      studentsCollection.findOne({ userId: currentUserId }, { projection: { sectionId: 1 } }),
+      enrollmentsCollection.find({ studentId: currentUserId }, { projection: { subjectId: 1 } }).toArray()
+    ]);
+    const subjectIds = enrollments.map((enrollment) => enrollment.subjectId);
+    if (!profile?.sectionId || subjectIds.length === 0) return [];
+
+    const assignments = await assignmentsCollection.find({
+      subjectId: { $in: subjectIds },
+      sectionId: profile.sectionId,
+      facultyId: { $ne: currentUserId }
+    }).toArray();
+    const facultyIds = [...new Set(assignments.map((assignment) => assignment.facultyId.toString()))]
+      .map((id) => new ObjectId(id));
+    if (facultyIds.length === 0) return [];
+
+    const [faculty, subjects] = await Promise.all([
+      usersCollection.find(
+        { _id: { $in: facultyIds }, role: { $in: ['faculty', 'instructor', 'program_chair'] } },
+        { projection: { password: 0 } }
+      ).sort({ name: 1 }).toArray(),
+      subjectsCollection.find({ _id: { $in: subjectIds } }).toArray()
+    ]);
+    const subjectsById = new Map(subjects.map((subject) => [subject._id.toString(), subject]));
+    const assignmentsByFaculty = new Map();
+    assignments.forEach((assignment) => {
+      const subject = subjectsById.get(assignment.subjectId.toString());
+      if (!subject) return;
+      const key = assignment.facultyId.toString();
+      const current = assignmentsByFaculty.get(key) || [];
+      current.push({ id: subject._id.toString(), code: subject.code, description: subject.description });
+      assignmentsByFaculty.set(key, current);
+    });
+
+    return faculty.map((member) => ({
+      id: member._id.toString(),
+      name: member.name,
+      role: member.role,
+      subjects: assignmentsByFaculty.get(member._id.toString()) || []
+    }));
+  }
+
+  const assignments = await assignmentsCollection.find(
+    role === 'program_chair' ? {} : { facultyId: currentUserId }
+  ).toArray();
+  if (assignments.length === 0) return [];
+
+  const students = await usersCollection.find(
+    { role: 'student', _id: { $ne: currentUserId } },
+    { projection: { password: 0 } }
+  ).sort({ name: 1 }).toArray();
+  const profiles = await studentsCollection.find({
+    userId: { $in: students.map((student) => student._id) }
+  }).toArray();
+  const profilesByUserId = new Map(profiles.map((profile) => [profile.userId.toString(), profile]));
+  const eligibleStudents = [];
+
+  for (const student of students) {
+    const profile = profilesByUserId.get(student._id.toString());
+    const studentEnrollments = await enrollmentsCollection.find({
+      studentId: student._id,
+      subjectId: { $in: assignments.map((assignment) => assignment.subjectId) }
+    }, { projection: { subjectId: 1 } }).toArray();
+    const subjectIds = new Set(studentEnrollments.map((enrollment) => enrollment.subjectId.toString()));
+    const matchingAssignments = assignments.filter((assignment) =>
+      subjectIds.has(assignment.subjectId.toString()) &&
+      (!profile?.sectionId || assignment.sectionId.toString() === profile.sectionId.toString())
+    );
+    if (matchingAssignments.length > 0) {
+      eligibleStudents.push({
+        id: student._id.toString(),
+        name: student.name,
+        role: student.role,
+        subjects: matchingAssignments.map((assignment) => ({
+          id: assignment.subjectId.toString()
+        }))
+      });
+    }
+  }
+  return eligibleStudents;
+}
+
+async function canChatWith(userId, role, recipientId) {
+  const contacts = await getChatContacts(userId, role);
+  return contacts.some((contact) => contact.id === recipientId);
 }
 
 // ----------------- ROUTES ----------------- //
@@ -394,6 +497,97 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching user profile:', error);
     return res.status(500).json({ error: 'Failed to fetch user profile.' });
+  }
+});
+
+// Shared authenticated chat room for students, faculty, and program chairs
+app.get('/api/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    if (!ObjectId.isValid(req.query.recipientId)) {
+      return res.status(400).json({ error: 'A valid chat recipient is required.' });
+    }
+    const recipientId = req.query.recipientId;
+    if (!(await canChatWith(req.user.userId, req.user.role, recipientId))) {
+      return res.status(403).json({ error: 'You are not allowed to chat with this user.' });
+    }
+    const senderId = new ObjectId(req.user.userId);
+    const recipientObjectId = new ObjectId(recipientId);
+    const messages = await chatMessagesCollection
+      .find({
+        $or: [
+          { senderId, recipientId: recipientObjectId },
+          { senderId: recipientObjectId, recipientId: senderId }
+        ]
+      })
+      .sort({ createdAt: 1 })
+      .limit(100)
+      .toArray();
+
+    return res.json({
+      messages: messages.map(serializeChatMessage)
+    });
+  } catch (error) {
+    console.error('Error fetching chat messages:', error);
+    return res.status(500).json({ error: 'Failed to fetch chat messages.' });
+  }
+});
+
+app.post('/api/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    const recipientId = typeof req.body.recipientId === 'string' ? req.body.recipientId : '';
+    if (!ObjectId.isValid(recipientId)) {
+      return res.status(400).json({ error: 'A valid chat recipient is required.' });
+    }
+    if (!(await canChatWith(req.user.userId, req.user.role, recipientId))) {
+      return res.status(403).json({ error: 'You are not allowed to chat with this user.' });
+    }
+    const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+    if (!text) {
+      return res.status(400).json({ error: 'Message text is required.' });
+    }
+    if (text.length > 1000) {
+      return res.status(400).json({ error: 'Message must be 1000 characters or fewer.' });
+    }
+
+    let sender;
+    try {
+      sender = await usersCollection.findOne(
+        { _id: new ObjectId(req.user.userId) },
+        { projection: { name: 1, role: 1 } }
+      );
+    } catch {
+      sender = null;
+    }
+
+    if (!sender) {
+      return res.status(401).json({ error: 'Authenticated user profile not found.' });
+    }
+
+    const message = {
+      senderId: sender._id,
+      recipientId: new ObjectId(recipientId),
+      senderName: sender.name,
+      senderRole: sender.role || 'student',
+      text,
+      createdAt: new Date()
+    };
+    const result = await chatMessagesCollection.insertOne(message);
+
+    return res.status(201).json({
+      message: serializeChatMessage({ ...message, _id: result.insertedId })
+    });
+  } catch (error) {
+    console.error('Error creating chat message:', error);
+    return res.status(500).json({ error: 'Failed to send chat message.' });
+  }
+});
+
+app.get('/api/chat/contacts', authenticateToken, async (req, res) => {
+  try {
+    return res.json({ contacts: await getChatContacts(req.user.userId, req.user.role) });
+  } catch (error) {
+    console.error('Error fetching chat contacts:', error);
+    return res.status(500).json({ error: 'Failed to fetch chat contacts.' });
   }
 });
 
@@ -1670,6 +1864,7 @@ async function start() {
   lessonsCollection = database.collection('lessons');
   quizzesCollection = database.collection('quizzes');
   quizSubmissionsCollection = database.collection('quizSubmissions');
+  chatMessagesCollection = database.collection('chatMessages');
   studentsCollection = database.collection('students');
   facultyCollection = database.collection('faculty');
   programChairsCollection = database.collection('programChairs');
@@ -1691,6 +1886,7 @@ async function start() {
   await assignmentsCollection.createIndex({ facultyId: 1, subjectId: 1, sectionId: 1 }, { unique: true });
   await quizzesCollection.createIndex({ subjectId: 1, updatedAt: -1 });
   await quizSubmissionsCollection.createIndex({ quizId: 1, studentId: 1 }, { unique: true });
+  await chatMessagesCollection.createIndex({ createdAt: -1 });
   await studentsCollection.createIndex({ userId: 1 }, { unique: true });
   await facultyCollection.createIndex({ userId: 1 }, { unique: true });
   await programChairsCollection.createIndex({ userId: 1 }, { unique: true });

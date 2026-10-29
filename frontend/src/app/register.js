@@ -7,9 +7,12 @@ import {
   Platform,
   TouchableOpacity,
   Image,
-  Alert
+  Alert,
+  KeyboardAvoidingView,
+  StatusBar
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
@@ -18,8 +21,29 @@ import AuthButton from '../components/AuthButton';
 import DropdownSelect from '../components/DropdownSelect';
 import { API_BASE_URL, apiGetPrograms } from '../api/client';
 
+// Same TUP palette as LoginScreen: maroon + gold on cream, chunky ink outlines.
+// Consider moving this to a shared theme file.
+const COLORS = {
+  brand: '#7B1113',
+  brandDeep: '#4A0A0C',
+  brandSoft: '#F6E4E4',
+  brandLine: '#EBC9A0',
+  gold: '#F2B705',
+  goldSoft: '#FFF1BF',
+  paper: '#FFF9EE',
+  surface: '#FFFFFF',
+  ink: '#1F1416',
+  muted: '#6E6165',
+  faint: '#A39A9E',
+  line: '#E8E2E4',
+  danger: '#B42318',
+  dangerSoft: '#FEF3F2',
+  dangerLine: '#FECDCA'
+};
+
 export default function RegisterScreen({ onNavigate }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { register } = useAuth();
 
   const [name, setName] = useState('');
@@ -51,8 +75,8 @@ export default function RegisterScreen({ onNavigate }) {
         if (isMounted) {
           setNetworkWarning(
             err?.isNetworkError || err?.message?.includes('connect')
-              ? 'Unable to reach the server. Please start the backend and try again.'
-              : 'Unable to load programs right now. Please try again later.'
+              ? 'Unable to reach the server. Check your connection and try again.'
+              : 'Unable to load programs right now. Try again later.'
           );
         }
       } finally {
@@ -107,15 +131,14 @@ export default function RegisterScreen({ onNavigate }) {
 
   // ── Profile picture picker ──────────────────────────────────────────
   const pickImage = async () => {
-    // Request permission
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       if (Platform.OS === 'web') {
-        alert('Gallery permission is required to pick a profile picture.');
+        alert('Allow access to your gallery to choose a profile picture.');
       } else {
         Alert.alert(
-          'Permission Required',
-          'Please allow access to your photo library to pick a profile picture.',
+          'Photo access needed 📸',
+          'Allow access to your photo library to choose a profile picture.',
           [{ text: 'OK' }]
         );
       }
@@ -148,19 +171,19 @@ export default function RegisterScreen({ onNavigate }) {
     const trimmedEmail = email.trim();
 
     if (!trimmedName || trimmedName.length < 2) {
-      newErrors.name = 'Please enter your full name (at least 2 characters)';
+      newErrors.name = 'Enter your full name (at least 2 characters)';
     }
 
     if (!trimmedEmail) {
-      newErrors.email = 'Email address is required';
+      newErrors.email = 'Enter your email address';
     } else if (!/^[^\s@]+@tup\.edu\.ph$/i.test(trimmedEmail)) {
-      newErrors.email = 'Please use your TUP email address ending in @tup.edu.ph';
+      newErrors.email = 'Use your TUP email ending in @tup.edu.ph';
     }
 
     if (!password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = 'Enter a password';
     } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = 'Use at least 6 characters';
     }
 
     if (confirmPassword !== password) {
@@ -168,7 +191,7 @@ export default function RegisterScreen({ onNavigate }) {
     }
 
     if (!program || (typeof program === 'string' && !program.trim())) {
-      newErrors.program = 'Please select your program';
+      newErrors.program = 'Select your program';
     }
 
     setErrors(newErrors);
@@ -191,255 +214,356 @@ export default function RegisterScreen({ onNavigate }) {
       replaceTo('/dashboard');
     } catch (err) {
       console.log('Registration failed:', err);
-      setServerError(err.message || 'Registration failed. Please check your details.');
+      setServerError(err.message || 'Registration failed. Check your details and try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  return (
-    <ScrollView
-      style={styles.keyboardContainer}
-      contentContainerStyle={styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="none"
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.contentWrap}>
-        {/* Back Button */}
-        <TouchableOpacity
-          onPress={goBack}
-          style={styles.backButton}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="arrow-back" size={22} color="#0F172A" />
-        </TouchableOpacity>
+  const bannerMessage = serverError || networkWarning;
 
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
+  return (
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.brand} />
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="none"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Brand panel */}
+        <View style={[styles.hero, { paddingTop: insets.top + 16 }]}>
+          {/* Gear motifs: TUP's technological identity */}
+          <Ionicons
+            name="settings"
+            size={190}
+            color={COLORS.gold}
+            style={styles.gearBig}
+          />
+          <Ionicons
+            name="settings"
+            size={80}
+            color={COLORS.gold}
+            style={styles.gearSmall}
+          />
+
+          <TouchableOpacity
+            onPress={goBack}
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back to sign in"
+          >
+            <Ionicons name="arrow-back" size={22} color={COLORS.brandDeep} />
+          </TouchableOpacity>
+
+          <View style={styles.campusSticker}>
+            <Ionicons name="location" size={12} color={COLORS.brandDeep} />
+            <Text style={styles.campusStickerText}>TUP TAGUIG</Text>
+          </View>
+
+          <Text style={styles.title}>Join the squad 🎓</Text>
           <Text style={styles.subtitle}>
-            Register for your Technological University of the Philippines - Taguig student account. An administrator can change your
-            role to faculty, program chair, or super admin when needed.
+            Sign up with your TUP email to get into the Taguig campus learning
+            portal. Takes a minute, promise.
           </Text>
         </View>
 
-        {/* Server Error Alert */}
-        {serverError || networkWarning ? (
-          <View style={styles.errorBanner}>
-            <Ionicons name="alert-circle" size={20} color="#DC2626" style={styles.errorIcon} />
-            <Text style={styles.errorBannerText}>{serverError || networkWarning}</Text>
-          </View>
-        ) : null}
-
-        {/* Form Card */}
-        <View style={styles.formCard}>
-
-          {/* ── Profile Picture ── */}
-          <View style={styles.avatarSection}>
-            <TouchableOpacity
-              style={styles.avatarWrap}
-              onPress={pickImage}
-              activeOpacity={0.8}
-            >
-              {profilePicture ? (
-                <Image source={{ uri: profilePicture.uri }} style={styles.avatarImage} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Ionicons name="person-outline" size={36} color="#94A3B8" />
-                </View>
-              )}
-              {/* Camera badge */}
-              <View style={styles.cameraBadge}>
-                <Ionicons name="camera" size={14} color="#FFFFFF" />
+        {/* Form card with hard offset shadow */}
+        <View style={styles.formWrap}>
+          <View style={styles.formShadow} />
+          <View style={styles.formCard}>
+            {bannerMessage ? (
+              <View style={styles.errorBanner} accessibilityRole="alert">
+                <Ionicons
+                  name="alert-circle"
+                  size={20}
+                  color={COLORS.danger}
+                  style={styles.errorIcon}
+                />
+                <Text style={styles.errorBannerText}>{bannerMessage}</Text>
               </View>
-            </TouchableOpacity>
-            <Text style={styles.avatarLabel}>Profile Picture</Text>
-            <Text style={styles.avatarHint}>Optional · Tap to choose from gallery</Text>
-            {profilePicture && (
-              <TouchableOpacity onPress={removeImage} style={styles.removeBtn}>
-                <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                <Text style={styles.removeBtnText}>Remove</Text>
+            ) : null}
+
+            {/* Profile picture */}
+            <View style={styles.avatarSection}>
+              <TouchableOpacity
+                style={styles.avatarWrap}
+                onPress={pickImage}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Choose profile picture"
+              >
+                {profilePicture ? (
+                  <Image source={{ uri: profilePicture.uri }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="person-outline" size={34} color={COLORS.brand} />
+                  </View>
+                )}
+                <View style={styles.cameraBadge}>
+                  <Ionicons name="camera" size={14} color={COLORS.brandDeep} />
+                </View>
               </TouchableOpacity>
-            )}
+              <Text style={styles.avatarLabel}>Profile picture</Text>
+              <Text style={styles.avatarHint}>Optional. Show your best angle</Text>
+              {profilePicture && (
+                <TouchableOpacity
+                  onPress={removeImage}
+                  style={styles.removeBtn}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="trash-outline" size={14} color={COLORS.danger} />
+                  <Text style={styles.removeBtnText}>Remove photo</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Fields */}
+            <AuthInput
+              label="Full name"
+              icon="person-outline"
+              placeholder="e.g. Juan Dela Cruz"
+              value={name}
+              onChangeText={(text) => {
+                setName(text);
+                if (errors.name) setErrors((prev) => ({ ...prev, name: null }));
+                if (serverError) setServerError('');
+              }}
+              autoCapitalize="words"
+              error={errors.name}
+            />
+
+            <AuthInput
+              label="School email"
+              icon="mail-outline"
+              placeholder="you@tup.edu.ph"
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
+                if (serverError) setServerError('');
+              }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              error={errors.email}
+            />
+
+            <DropdownSelect
+              label="Program"
+              icon="school-outline"
+              placeholder={loadingPrograms ? 'Loading programs...' : 'Pick your program'}
+              options={programOptions}
+              value={program}
+              onSelect={(val) => {
+                setProgram(val);
+                if (errors.program) setErrors((prev) => ({ ...prev, program: null }));
+                if (serverError) setServerError('');
+              }}
+              error={errors.program}
+            />
+
+            <AuthInput
+              label="Password"
+              icon="lock-closed-outline"
+              placeholder="At least 6 characters"
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                if (errors.password) setErrors((prev) => ({ ...prev, password: null }));
+                if (serverError) setServerError('');
+              }}
+              isPassword
+              error={errors.password}
+            />
+
+            <AuthInput
+              label="Confirm password"
+              icon="shield-checkmark-outline"
+              placeholder="Type it again"
+              value={confirmPassword}
+              onChangeText={(text) => {
+                setConfirmPassword(text);
+                if (errors.confirmPassword)
+                  setErrors((prev) => ({ ...prev, confirmPassword: null }));
+                if (serverError) setServerError('');
+              }}
+              isPassword
+              error={errors.confirmPassword}
+            />
+
+            <AuthButton
+              title="Sign up"
+              onPress={handleRegister}
+              loading={isSubmitting}
+              style={styles.submitButton}
+            />
           </View>
-
-          <View style={styles.divider} />
-
-          {/* ── Text Fields ── */}
-          <AuthInput
-            label="Full Name"
-            icon="person-outline"
-            placeholder="e.g. Jerome Rosario"
-            value={name}
-            onChangeText={(text) => {
-              setName(text);
-              if (errors.name) setErrors((prev) => ({ ...prev, name: null }));
-              if (serverError) setServerError('');
-            }}
-            autoCapitalize="words"
-            error={errors.name}
-          />
-
-          <AuthInput
-            label="Email Address"
-            icon="mail-outline"
-            placeholder="you@tup.edu.ph"
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
-              if (serverError) setServerError('');
-            }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            error={errors.email}
-          />
-
-          <DropdownSelect
-            label="Program"
-            icon="school-outline"
-            placeholder={loadingPrograms ? 'Loading programs...' : 'Select your program'}
-            options={programOptions}
-            value={program}
-            onSelect={(val) => {
-              setProgram(val);
-              if (errors.program) setErrors((prev) => ({ ...prev, program: null }));
-              if (serverError) setServerError('');
-            }}
-            error={errors.program}
-          />
-
-          <AuthInput
-            label="Password"
-            icon="lock-closed-outline"
-            placeholder="Minimum 6 characters"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              if (errors.password) setErrors((prev) => ({ ...prev, password: null }));
-              if (serverError) setServerError('');
-            }}
-            isPassword
-            error={errors.password}
-          />
-
-          <AuthInput
-            label="Confirm Password"
-            icon="shield-checkmark-outline"
-            placeholder="Re-enter your password"
-            value={confirmPassword}
-            onChangeText={(text) => {
-              setConfirmPassword(text);
-              if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: null }));
-              if (serverError) setServerError('');
-            }}
-            isPassword
-            error={errors.confirmPassword}
-          />
-
-          <AuthButton
-            title="Create LMS Account"
-            onPress={handleRegister}
-            loading={isSubmitting}
-            style={styles.submitButton}
-          />
         </View>
 
-        {/* Switch to Login */}
+        {/* Switch to login */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account?</Text>
-          <TouchableOpacity onPress={() => navigateTo('/login')}>
-            <Text style={styles.loginLink}> Sign In</Text>
+          <Text style={styles.footerText}>Already a TUPian?</Text>
+          <TouchableOpacity
+            onPress={() => navigateTo('/login')}
+            style={styles.loginChip}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.loginLink}>Sign in</Text>
+            <Ionicons name="arrow-forward" size={14} color={COLORS.brandDeep} />
           </TouchableOpacity>
         </View>
 
-        {/* Subtle environment status */}
-        <View style={styles.envContainer}>
-          <Ionicons name="server-outline" size={13} color="#94A3B8" />
-          <Text style={styles.envText}>Connected to: {API_BASE_URL}</Text>
-        </View>
-      </View>
-    </ScrollView>
+        {/* Server address, shown only in development builds */}
+        {__DEV__ ? (
+          <View style={styles.envPill}>
+            <Ionicons name="server-outline" size={12} color={COLORS.faint} />
+            <Text style={styles.envText} numberOfLines={1}>
+              {API_BASE_URL}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={{ height: insets.bottom + 16 }} />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
+  root: {
     flex: 1,
-    backgroundColor: '#F8FAFC'
+    backgroundColor: COLORS.paper
   },
   scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 16,
-    paddingTop: 28,
-    paddingBottom: 32
+    flexGrow: 1
   },
-  contentWrap: {
-    width: '100%'
+
+  /* Brand panel */
+  hero: {
+    backgroundColor: COLORS.brand,
+    paddingHorizontal: 24,
+    paddingBottom: 60,
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+    overflow: 'hidden',
+    borderBottomWidth: 4,
+    borderBottomColor: COLORS.gold
+  },
+  gearBig: {
+    position: 'absolute',
+    right: -50,
+    top: -30,
+    opacity: 0.12,
+    transform: [{ rotate: '15deg' }]
+  },
+  gearSmall: {
+    position: 'absolute',
+    right: 90,
+    bottom: 8,
+    opacity: 0.1,
+    transform: [{ rotate: '-20deg' }]
   },
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderRadius: 20,
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20
   },
-  header: {
-    marginBottom: 20
+  campusSticker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    backgroundColor: COLORS.gold,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    marginBottom: 16,
+    transform: [{ rotate: '-2deg' }]
+  },
+  campusStickerText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: COLORS.brandDeep
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-    marginBottom: 6
+    fontSize: 32,
+    fontWeight: '900',
+    color: COLORS.surface,
+    letterSpacing: -0.8,
+    marginBottom: 8
   },
   subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    lineHeight: 20
+    fontSize: 15,
+    lineHeight: 22,
+    color: COLORS.brandLine,
+    maxWidth: 340
+  },
+
+  /* Form */
+  formWrap: {
+    marginHorizontal: 20,
+    marginTop: -36
+  },
+  formShadow: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: -6,
+    bottom: -6,
+    backgroundColor: COLORS.gold,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: COLORS.ink
+  },
+  formCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 2,
+    borderColor: COLORS.ink
   },
   errorBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.dangerSoft,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: COLORS.dangerLine,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16
   },
   errorIcon: {
-    marginRight: 8
+    marginRight: 8,
+    marginTop: 1
   },
   errorBannerText: {
     flex: 1,
-    color: '#B91C1C',
+    color: COLORS.danger,
     fontSize: 13,
+    lineHeight: 18,
     fontWeight: '500'
   },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2
-  },
-  // Avatar section
+
+  /* Avatar */
   avatarSection: {
     alignItems: 'center',
-    paddingVertical: 8,
-    marginBottom: 4
+    paddingTop: 4
   },
   avatarWrap: {
     position: 'relative',
@@ -450,15 +574,15 @@ const styles = StyleSheet.create({
     height: 96,
     borderRadius: 48,
     borderWidth: 3,
-    borderColor: '#DBEAFE'
+    borderColor: COLORS.gold
   },
   avatarPlaceholder: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: COLORS.goldSoft,
     borderWidth: 2,
-    borderColor: '#E2E8F0',
+    borderColor: COLORS.ink,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center'
@@ -467,74 +591,96 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#2563EB',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: COLORS.gold,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#FFFFFF'
+    borderColor: COLORS.ink
   },
   avatarLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.ink,
     marginBottom: 2
   },
   avatarHint: {
     fontSize: 12,
-    color: '#94A3B8'
+    color: COLORS.muted
   },
   removeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
+    marginTop: 10,
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: COLORS.dangerSoft,
     borderWidth: 1,
-    borderColor: '#FECACA'
+    borderColor: COLORS.dangerLine
   },
   removeBtnText: {
     fontSize: 12,
-    color: '#EF4444',
+    color: COLORS.danger,
     fontWeight: '600'
   },
   divider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 16
+    height: 2,
+    backgroundColor: COLORS.goldSoft,
+    marginVertical: 20,
+    borderRadius: 1
   },
   submitButton: {
-    marginTop: 10
+    marginTop: 8
   },
+
+  /* Footer */
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24
+    gap: 10,
+    marginTop: 36
   },
   footerText: {
     fontSize: 14,
-    color: '#64748B'
+    color: COLORS.muted
+  },
+  loginChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999
   },
   loginLink: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#2563EB'
+    fontWeight: '800',
+    color: COLORS.brandDeep
   },
-  envContainer: {
+  envPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: 6,
     marginTop: 20,
-    gap: 6
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    maxWidth: '85%'
   },
   envText: {
     fontSize: 11,
-    color: '#94A3B8'
+    color: COLORS.faint
   }
 });

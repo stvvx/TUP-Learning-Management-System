@@ -191,6 +191,29 @@ export async function apiGetDashboardStats(token) {
   });
 }
 
+export async function apiGetChatContacts(token) {
+  const result = await request('/api/chat/contacts', {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return result.contacts || [];
+}
+
+export async function apiGetChatMessages(token, recipientId) {
+  const result = await request(`/api/chat/messages?recipientId=${encodeURIComponent(recipientId)}`, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return result.messages || [];
+}
+
+export async function apiSendChatMessage(token, recipientId, text) {
+  const result = await request('/api/chat/messages', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ recipientId, text })
+  });
+  return result.message;
+}
+
 export async function apiGetUsers(token) {
   const result = await request('/api/admin/users', {
     method: 'GET',

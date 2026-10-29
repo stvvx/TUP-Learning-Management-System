@@ -25,6 +25,30 @@ import {
   apiGetStudentQuizzes
 } from '../api/client';
 
+// TUP palette: deep maroon + gold on warm cream. Chunky ink outlines for the campus-zine feel.
+// Same base as Login/Register. Consider moving this to a shared theme file.
+const COLORS = {
+  brand: '#7B1113',
+  brandDeep: '#4A0A0C',
+  brandSoft: '#F6E4E4',
+  brandLine: '#EBC9A0',
+  gold: '#F2B705',
+  goldDeep: '#9A6B00',
+  goldSoft: '#FFF1BF',
+  paper: '#FFF9EE',
+  surface: '#FFFFFF',
+  ink: '#1F1416',
+  inkSoft: '#EFE9EA',
+  muted: '#6E6165',
+  faint: '#A39A9E',
+  line: '#E8E2E4',
+  success: '#1F7A4D',
+  successSoft: '#E3F4EA',
+  danger: '#B42318',
+  dangerSoft: '#FEF3F2',
+  dangerLine: '#FECDCA'
+};
+
 export default function DashboardScreen({ onNavigate }) {
   const router = useRouter();
   const { user, token, logout, refreshUser } = useAuth();
@@ -162,7 +186,7 @@ export default function DashboardScreen({ onNavigate }) {
       <View style={styles.topBar}>
         <View style={styles.brandRow}>
           <View style={styles.brandIcon}>
-            <Ionicons name="school" size={20} color="#2563EB" />
+            <Ionicons name="school" size={20} color={COLORS.brand} />
           </View>
           <View style={styles.brandTextContainer}>
             <Text style={styles.brandTitle}>TUP - Taguig</Text>
@@ -178,9 +202,9 @@ export default function DashboardScreen({ onNavigate }) {
           accessibilityLabel="Refresh dashboard"
         >
           {isRefreshing ? (
-            <ActivityIndicator size="small" color="#2563EB" />
+            <ActivityIndicator size="small" color={COLORS.brand} />
           ) : (
-            <Ionicons name="refresh-outline" size={20} color="#64748B" />
+            <Ionicons name="refresh-outline" size={20} color={COLORS.ink} />
           )}
         </TouchableOpacity>
       </View>
@@ -189,41 +213,62 @@ export default function DashboardScreen({ onNavigate }) {
       <StudentHeader activeRoute="/dashboard" />
 
       {/* Welcome / Student Hero Profile Card */}
-      <View style={styles.heroCard}>
-        <View style={styles.heroHeader}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{userInitial}</Text>
-          </View>
-          <View style={styles.heroInfo}>
-            <View style={styles.greetingRow}>
-              <Text style={styles.greetingTitle}>Welcome back,</Text>
-              <View style={styles.statusPill}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusText}>Active Student</Text>
-              </View>
-            </View>
-            <Text style={styles.userName}>{user?.name || 'Student'}</Text>
-            <Text style={styles.userEmail}>{user?.email || 'N/A'}</Text>
-          </View>
-        </View>
+      <View style={styles.heroWrap}>
+        <View style={styles.heroShadow} />
+        <View style={styles.heroCard}>
+          {/* Gear motifs: TUP's technological identity */}
+          <Ionicons
+            name="settings"
+            size={170}
+            color={COLORS.gold}
+            style={styles.gearBig}
+          />
+          <Ionicons
+            name="settings"
+            size={70}
+            color={COLORS.gold}
+            style={styles.gearSmall}
+          />
 
-        <View style={styles.heroFooter}>
-          <View style={styles.badgeRow}>
-            <View style={styles.infoBadge}>
-              <Ionicons name="ribbon-outline" size={14} color="#1D4ED8" />
-              <Text style={styles.infoBadgeText}>Year: {currentYearLevel}</Text>
+          <View style={styles.heroHeader}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{userInitial}</Text>
             </View>
-            {user?.program ? (
-              <View style={styles.infoBadge}>
-                <Ionicons name="book-outline" size={14} color="#1D4ED8" />
-                <Text style={styles.infoBadgeText}>{user.program}</Text>
+            <View style={styles.heroInfo}>
+              <View style={styles.greetingRow}>
+                <Text style={styles.greetingTitle}>Welcome back 👋</Text>
+                <View style={styles.statusPill}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.statusText}>Active TUPian</Text>
+                </View>
               </View>
-            ) : null}
-            <View style={styles.infoBadgeNeutral}>
-              <Ionicons name="calendar-outline" size={14} color="#64748B" />
-              <Text style={styles.infoBadgeNeutralText}>
-                Joined {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'This term'}
+              <Text style={styles.userName} numberOfLines={1}>
+                {user?.name || 'Student'}
               </Text>
+              <Text style={styles.userEmail} numberOfLines={1}>
+                {user?.email || 'N/A'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.heroFooter}>
+            <View style={styles.badgeRow}>
+              <View style={styles.infoBadge}>
+                <Ionicons name="ribbon-outline" size={14} color={COLORS.brandDeep} />
+                <Text style={styles.infoBadgeText}>Year: {currentYearLevel}</Text>
+              </View>
+              {user?.program ? (
+                <View style={styles.infoBadge}>
+                  <Ionicons name="book-outline" size={14} color={COLORS.brandDeep} />
+                  <Text style={styles.infoBadgeText}>{user.program}</Text>
+                </View>
+              ) : null}
+              <View style={styles.infoBadgeNeutral}>
+                <Ionicons name="calendar-outline" size={14} color={COLORS.brandLine} />
+                <Text style={styles.infoBadgeNeutralText}>
+                  Joined {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'This term'}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -232,12 +277,12 @@ export default function DashboardScreen({ onNavigate }) {
       {/* Metric Stat Cards Grid */}
       <View style={styles.statsGrid}>
         <TouchableOpacity
-          style={[styles.statCard, { borderLeftColor: '#2563EB' }]}
+          style={styles.statCard}
           onPress={() => navigateTo('/subjects')}
           activeOpacity={0.7}
         >
-          <View style={[styles.statIconWrap, { backgroundColor: '#EFF6FF' }]}>
-            <Ionicons name="library" size={20} color="#2563EB" />
+          <View style={[styles.statIconWrap, { backgroundColor: COLORS.brandSoft }]}>
+            <Ionicons name="library" size={20} color={COLORS.brand} />
           </View>
           <Text style={styles.statNumber}>{enrolledCount}</Text>
           <Text style={styles.statLabel}>Enrolled Subjects</Text>
@@ -245,25 +290,25 @@ export default function DashboardScreen({ onNavigate }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.statCard, { borderLeftColor: '#059669' }]}
+          style={styles.statCard}
           onPress={() => navigateTo('/lessons')}
           activeOpacity={0.7}
         >
-          <View style={[styles.statIconWrap, { backgroundColor: '#ECFDF5' }]}>
-            <Ionicons name="book" size={20} color="#059669" />
+          <View style={[styles.statIconWrap, { backgroundColor: COLORS.successSoft }]}>
+            <Ionicons name="book" size={20} color={COLORS.success} />
           </View>
           <Text style={styles.statNumber}>{lessons.length}</Text>
           <Text style={styles.statLabel}>Published Lessons</Text>
-          <Text style={styles.statSub}>Ready for study</Text>
+          <Text style={styles.statSub}>Ready for study 📚</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.statCard, { borderLeftColor: '#D97706' }]}
+          style={styles.statCard}
           onPress={() => navigateTo('/exams')}
           activeOpacity={0.7}
         >
-          <View style={[styles.statIconWrap, { backgroundColor: '#FFFBEB' }]}>
-            <Ionicons name="document-text" size={20} color="#D97706" />
+          <View style={[styles.statIconWrap, { backgroundColor: COLORS.goldSoft }]}>
+            <Ionicons name="document-text" size={20} color={COLORS.goldDeep} />
           </View>
           <Text style={styles.statNumber}>{quizzes.length}</Text>
           <Text style={styles.statLabel}>Available Exams</Text>
@@ -271,12 +316,12 @@ export default function DashboardScreen({ onNavigate }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.statCard, { borderLeftColor: '#7C3AED' }]}
+          style={styles.statCard}
           onPress={() => navigateTo('/message')}
           activeOpacity={0.7}
         >
-          <View style={[styles.statIconWrap, { backgroundColor: '#F5F3FF' }]}>
-            <Ionicons name="chatbubbles" size={20} color="#7C3AED" />
+          <View style={[styles.statIconWrap, { backgroundColor: COLORS.inkSoft }]}>
+            <Ionicons name="chatbubbles" size={20} color={COLORS.ink} />
           </View>
           <Text style={styles.statNumber}>Inbox</Text>
           <Text style={styles.statLabel}>Messages</Text>
@@ -286,15 +331,15 @@ export default function DashboardScreen({ onNavigate }) {
 
       {/* Quick Launchpad Shortcuts */}
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Quick Shortcuts</Text>
+        <Text style={styles.sectionTitle}>Jump to ⚡</Text>
       </View>
       <View style={styles.shortcutsRow}>
         <TouchableOpacity
           style={styles.shortcutBtn}
           onPress={() => navigateTo('/subjects')}
         >
-          <View style={[styles.shortcutIconCircle, { backgroundColor: '#EFF6FF' }]}>
-            <Ionicons name="library-outline" size={22} color="#2563EB" />
+          <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.brandSoft }]}>
+            <Ionicons name="library-outline" size={22} color={COLORS.brand} />
           </View>
           <Text style={styles.shortcutLabel}>Subjects</Text>
           <Text style={styles.shortcutDesc}>Enroll courses</Text>
@@ -304,8 +349,8 @@ export default function DashboardScreen({ onNavigate }) {
           style={styles.shortcutBtn}
           onPress={() => navigateTo('/lessons')}
         >
-          <View style={[styles.shortcutIconCircle, { backgroundColor: '#ECFDF5' }]}>
-            <Ionicons name="book-outline" size={22} color="#059669" />
+          <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.successSoft }]}>
+            <Ionicons name="book-outline" size={22} color={COLORS.success} />
           </View>
           <Text style={styles.shortcutLabel}>Lessons</Text>
           <Text style={styles.shortcutDesc}>Read slides</Text>
@@ -315,8 +360,8 @@ export default function DashboardScreen({ onNavigate }) {
           style={styles.shortcutBtn}
           onPress={() => navigateTo('/exams')}
         >
-          <View style={[styles.shortcutIconCircle, { backgroundColor: '#FFFBEB' }]}>
-            <Ionicons name="document-text-outline" size={22} color="#D97706" />
+          <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.goldSoft }]}>
+            <Ionicons name="document-text-outline" size={22} color={COLORS.goldDeep} />
           </View>
           <Text style={styles.shortcutLabel}>Exams</Text>
           <Text style={styles.shortcutDesc}>Take quizzes</Text>
@@ -326,8 +371,8 @@ export default function DashboardScreen({ onNavigate }) {
           style={styles.shortcutBtn}
           onPress={() => navigateTo('/profile')}
         >
-          <View style={[styles.shortcutIconCircle, { backgroundColor: '#F5F3FF' }]}>
-            <Ionicons name="person-outline" size={22} color="#7C3AED" />
+          <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.inkSoft }]}>
+            <Ionicons name="person-outline" size={22} color={COLORS.ink} />
           </View>
           <Text style={styles.shortcutLabel}>Profile</Text>
           <Text style={styles.shortcutDesc}>My account</Text>
@@ -356,10 +401,10 @@ export default function DashboardScreen({ onNavigate }) {
         </View>
 
         {isLoadingContent ? (
-          <ActivityIndicator style={{ paddingVertical: 20 }} color="#2563EB" />
+          <ActivityIndicator style={{ paddingVertical: 20 }} color={COLORS.brand} />
         ) : enrolledSubjects.length === 0 ? (
           <View style={styles.emptyCallout}>
-            <Ionicons name="information-circle-outline" size={32} color="#2563EB" />
+            <Ionicons name="information-circle-outline" size={32} color={COLORS.brand} />
             <Text style={styles.emptyCalloutTitle}>No enrolled subjects yet</Text>
             <Text style={styles.emptyCalloutText}>
               Select and enroll in your required subjects for {currentYearLevel} to start accessing lessons and exams.
@@ -379,7 +424,7 @@ export default function DashboardScreen({ onNavigate }) {
                   <Text style={styles.subjectCodeText}>{subject.code}</Text>
                 </View>
                 <View style={styles.enrolledBadge}>
-                  <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                  <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
                   <Text style={styles.enrolledBadgeText}>Enrolled</Text>
                 </View>
               </View>
@@ -388,7 +433,7 @@ export default function DashboardScreen({ onNavigate }) {
               </Text>
               <View style={styles.subjectCardFooter}>
                 <Text style={styles.subjectTermText}>
-                  <Ionicons name="time-outline" size={12} color="#64748B" /> {subject.term}
+                  <Ionicons name="time-outline" size={12} color={COLORS.muted} /> {subject.term}
                 </Text>
                 <TouchableOpacity
                   onPress={() => navigateTo('/lessons')}
@@ -415,11 +460,11 @@ export default function DashboardScreen({ onNavigate }) {
         </View>
 
         {isLoadingContent ? (
-          <ActivityIndicator style={{ paddingVertical: 20 }} color="#2563EB" />
+          <ActivityIndicator style={{ paddingVertical: 20 }} color={COLORS.brand} />
         ) : lessons.length === 0 ? (
           <View style={styles.emptyStateSimple}>
             <Text style={styles.emptyStateSimpleText}>
-              No lessons have been published for your subjects yet.
+              No lessons have been published for your subjects yet. Enjoy the break 😌
             </Text>
           </View>
         ) : (
@@ -434,7 +479,7 @@ export default function DashboardScreen({ onNavigate }) {
                 <Ionicons
                   name={lesson.type === 'file' ? 'document-attach-outline' : 'easel-outline'}
                   size={20}
-                  color="#2563EB"
+                  color={COLORS.brand}
                 />
               </View>
               <View style={styles.lessonMeta}>
@@ -443,7 +488,7 @@ export default function DashboardScreen({ onNavigate }) {
                   {lesson.type === 'file' ? lesson.fileName : `${lesson.slides?.length || 0} slide(s)`}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={18} color={COLORS.ink} />
             </TouchableOpacity>
           ))
         )}
@@ -454,7 +499,7 @@ export default function DashboardScreen({ onNavigate }) {
         <View style={styles.sectionHeaderRow}>
           <View>
             <Text style={styles.sectionTitle}>Available Quizzes</Text>
-            <Text style={styles.sectionSubtitle}>Assess your learning</Text>
+            <Text style={styles.sectionSubtitle}>Time to flex what you know 💪</Text>
           </View>
           <TouchableOpacity onPress={() => navigateTo('/exams')}>
             <Text style={styles.seeAllLink}>View all →</Text>
@@ -462,11 +507,11 @@ export default function DashboardScreen({ onNavigate }) {
         </View>
 
         {isLoadingContent ? (
-          <ActivityIndicator style={{ paddingVertical: 20 }} color="#2563EB" />
+          <ActivityIndicator style={{ paddingVertical: 20 }} color={COLORS.brand} />
         ) : quizzes.length === 0 ? (
           <View style={styles.emptyStateSimple}>
             <Text style={styles.emptyStateSimpleText}>
-              No quizzes or exams are currently scheduled.
+              No quizzes or exams are currently scheduled. Breathe easy 🍃
             </Text>
           </View>
         ) : (
@@ -522,7 +567,7 @@ export default function DashboardScreen({ onNavigate }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC'
+    backgroundColor: COLORS.paper
   },
   contentContainer: {
     paddingHorizontal: 16,
@@ -543,12 +588,12 @@ const styles = StyleSheet.create({
     paddingRight: 8
   },
   brandIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -556,40 +601,64 @@ const styles = StyleSheet.create({
     flex: 1
   },
   brandTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    lineHeight: 18
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.brand,
+    lineHeight: 19
   },
   brandSubtitle: {
     fontSize: 11,
-    color: '#64748B',
+    color: COLORS.muted,
     lineHeight: 14
   },
   refreshButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
     alignItems: 'center',
     justifyContent: 'center'
   },
 
   // Hero Card
+  heroWrap: {
+    marginBottom: 20,
+    marginTop: 4
+  },
+  heroShadow: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: -6,
+    bottom: -6,
+    backgroundColor: COLORS.gold,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: COLORS.ink
+  },
   heroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: COLORS.brand,
+    borderRadius: 22,
     padding: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    overflow: 'hidden'
+  },
+  gearBig: {
+    position: 'absolute',
+    right: -40,
+    top: -30,
+    opacity: 0.12,
+    transform: [{ rotate: '15deg' }]
+  },
+  gearSmall: {
+    position: 'absolute',
+    right: 80,
+    bottom: -10,
+    opacity: 0.1,
+    transform: [{ rotate: '-20deg' }]
   },
   heroHeader: {
     flexDirection: 'row',
@@ -600,14 +669,16 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: '#2563EB',
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.surface,
     alignItems: 'center',
     justifyContent: 'center'
   },
   avatarText: {
-    color: '#FFFFFF',
+    color: COLORS.brandDeep,
     fontSize: 24,
-    fontWeight: '800'
+    fontWeight: '900'
   },
   heroInfo: {
     flex: 1
@@ -622,45 +693,43 @@ const styles = StyleSheet.create({
   greetingTitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B'
+    color: COLORS.brandLine
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: COLORS.goldSoft,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#A7F3D0'
+    borderRadius: 12
   },
   statusDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#059669'
+    backgroundColor: COLORS.success
   },
   statusText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#065F46'
+    fontWeight: '800',
+    color: COLORS.brandDeep
   },
   userName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 19,
+    fontWeight: '900',
+    color: COLORS.surface,
     marginBottom: 2
   },
   userEmail: {
     fontSize: 13,
-    color: '#64748B'
+    color: COLORS.brandLine
   },
   heroFooter: {
     marginTop: 14,
     paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9'
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(242,183,5,0.5)'
   },
   badgeRow: {
     flexDirection: 'row',
@@ -671,32 +740,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: COLORS.gold,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE'
+    borderRadius: 999
   },
   infoBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8'
+    fontWeight: '800',
+    color: COLORS.brandDeep
   },
   infoBadgeNeutral: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#F8FAFC',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#E2E8F0'
+    borderColor: COLORS.brandLine
   },
   infoBadgeNeutralText: {
     fontSize: 12,
-    color: '#64748B'
+    color: COLORS.brandLine
   },
 
   // Stats Grid
@@ -709,40 +775,35 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderLeftWidth: 4,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderBottomWidth: 5
   },
   statIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8
   },
   statNumber: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '900',
+    color: COLORS.ink,
     marginBottom: 2
   },
   statLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#334155'
+    color: COLORS.ink
   },
   statSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: COLORS.muted,
     marginTop: 2
   },
 
@@ -755,19 +816,20 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A'
+    fontSize: 17,
+    fontWeight: '900',
+    color: COLORS.ink,
+    letterSpacing: -0.3
   },
   sectionSubtitle: {
     fontSize: 12,
-    color: '#64748B',
+    color: COLORS.muted,
     marginTop: 1
   },
   seeAllLink: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB'
+    fontWeight: '800',
+    color: COLORS.brand
   },
   shortcutsRow: {
     flexDirection: 'row',
@@ -776,13 +838,13 @@ const styles = StyleSheet.create({
   },
   shortcutBtn: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 6,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
+    borderWidth: 2,
+    borderColor: COLORS.ink
   },
   shortcutIconCircle: {
     width: 40,
@@ -794,12 +856,12 @@ const styles = StyleSheet.create({
   },
   shortcutLabel: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A'
+    fontWeight: '800',
+    color: COLORS.ink
   },
   shortcutDesc: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: COLORS.muted,
     marginTop: 1
   },
 
@@ -815,12 +877,12 @@ const styles = StyleSheet.create({
 
   // Enrolled Subject Cards
   subjectCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.surface,
     borderRadius: 14,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 8
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    marginBottom: 10
   },
   subjectCardHeader: {
     flexDirection: 'row',
@@ -829,33 +891,34 @@ const styles = StyleSheet.create({
     marginBottom: 6
   },
   subjectCodeBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
+    backgroundColor: COLORS.brand,
+    paddingHorizontal: 10,
     paddingVertical: 3,
-    borderRadius: 6
+    borderRadius: 999
   },
   subjectCodeText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
-    color: '#1D4ED8'
+    color: COLORS.surface,
+    letterSpacing: 0.4
   },
   enrolledBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: COLORS.successSoft,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6
+    borderRadius: 999
   },
   enrolledBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#065F46'
+    color: COLORS.success
   },
   subjectDescription: {
     fontSize: 13,
-    color: '#334155',
+    color: COLORS.ink,
     lineHeight: 18,
     marginBottom: 8
   },
@@ -865,11 +928,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F8FAFC'
+    borderTopColor: COLORS.line
   },
   subjectTermText: {
     fontSize: 12,
-    color: '#64748B'
+    color: COLORS.muted
   },
   subjectActionBtn: {
     paddingVertical: 2,
@@ -877,43 +940,46 @@ const styles = StyleSheet.create({
   },
   subjectActionText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#2563EB'
+    fontWeight: '800',
+    color: COLORS.brand
   },
 
   // Empty Callout
   emptyCallout: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 14,
+    backgroundColor: COLORS.goldSoft,
+    borderRadius: 16,
     padding: 18,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderStyle: 'dashed',
     marginBottom: 8
   },
   emptyCalloutTitle: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#1D4ED8',
+    fontWeight: '800',
+    color: COLORS.brandDeep,
     marginTop: 8,
     marginBottom: 4
   },
   emptyCalloutText: {
     fontSize: 13,
-    color: '#475569',
+    color: COLORS.ink,
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 12
   },
   calloutButton: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8
+    backgroundColor: COLORS.brand,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: COLORS.ink
   },
   calloutButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: COLORS.surface,
+    fontWeight: '800',
     fontSize: 13
   },
 
@@ -922,18 +988,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 8
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    marginBottom: 10
   },
   lessonIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -942,13 +1010,13 @@ const styles = StyleSheet.create({
   },
   lessonTitle: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: '800',
+    color: COLORS.ink,
     marginBottom: 2
   },
   lessonSub: {
     fontSize: 12,
-    color: '#64748B'
+    color: COLORS.muted
   },
 
   // Quizzes
@@ -957,12 +1025,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 8
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    marginBottom: 10
   },
   quizInfo: {
     flex: 1
@@ -976,66 +1044,66 @@ const styles = StyleSheet.create({
   },
   quizTitle: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A'
+    fontWeight: '800',
+    color: COLORS.ink
   },
   quizScorePill: {
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 6
+    borderRadius: 999
   },
   scorePillPass: {
-    backgroundColor: '#ECFDF5'
+    backgroundColor: COLORS.successSoft
   },
   scorePillFail: {
-    backgroundColor: '#FEF2F2'
+    backgroundColor: COLORS.dangerSoft
   },
   quizScorePillText: {
     fontSize: 11,
     fontWeight: '800'
   },
   scorePillTextPass: {
-    color: '#059669'
+    color: COLORS.success
   },
   scorePillTextFail: {
-    color: '#DC2626'
+    color: COLORS.danger
   },
   quizSub: {
     fontSize: 12,
-    color: '#64748B'
+    color: COLORS.muted
   },
   takeQuizBtn: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
+    backgroundColor: COLORS.gold,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE'
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: COLORS.ink
   },
   takeQuizBtnText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8'
+    fontWeight: '800',
+    color: COLORS.brandDeep
   },
   viewScoreBtn: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#CBD5E1'
+    backgroundColor: COLORS.surface
   },
   viewScoreBtnText: {
-    color: '#475569'
+    color: COLORS.ink
   },
 
   emptyStateSimple: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
     padding: 16,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
+    borderWidth: 2,
+    borderColor: COLORS.line,
+    borderStyle: 'dashed'
   },
   emptyStateSimpleText: {
     fontSize: 13,
-    color: '#64748B',
+    color: COLORS.muted,
     textAlign: 'center'
   },
 
@@ -1044,10 +1112,10 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   logoutButton: {
-    borderColor: '#FCA5A5',
-    backgroundColor: '#FEF2F2'
+    borderColor: COLORS.danger,
+    backgroundColor: COLORS.dangerSoft
   },
   logoutButtonText: {
-    color: '#DC2626'
+    color: COLORS.danger
   }
 });

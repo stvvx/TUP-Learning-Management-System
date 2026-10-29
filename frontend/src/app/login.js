@@ -4,17 +4,42 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert
+  Alert,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import AuthInput from '../components/AuthInput';
 import AuthButton from '../components/AuthButton';
 import { API_BASE_URL } from '../api/client';
 
+// TUP palette: deep maroon + gold on warm cream. Chunky ink outlines for the campus-zine feel.
+const COLORS = {
+  brand: '#7B1113',      // TUP maroon
+  brandDeep: '#4A0A0C',
+  brandSoft: '#F6E4E4',
+  brandLine: '#EBC9A0',  // warm sand text on maroon
+  gold: '#F2B705',
+  goldSoft: '#FFF1BF',
+  paper: '#FFF9EE',      // cream
+  surface: '#FFFFFF',
+  ink: '#1F1416',
+  muted: '#6E6165',
+  faint: '#A39A9E',
+  line: '#E8E2E4',
+  danger: '#B42318',
+  dangerSoft: '#FEF3F2',
+  dangerLine: '#FECDCA'
+};
+
 export default function LoginScreen({ onNavigate }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { login } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -22,7 +47,6 @@ export default function LoginScreen({ onNavigate }) {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
-  const [networkWarning, setNetworkWarning] = useState('');
 
   const navigateTo = (route) => {
     if (onNavigate) {
@@ -45,13 +69,13 @@ export default function LoginScreen({ onNavigate }) {
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail) {
-      newErrors.email = 'Email is required';
+      newErrors.email = 'Enter your email address';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = 'Enter a valid email address';
     }
 
     if (!password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = 'Enter your password';
     }
 
     setErrors(newErrors);
@@ -60,7 +84,6 @@ export default function LoginScreen({ onNavigate }) {
 
   const handleLogin = async () => {
     setServerError('');
-    setNetworkWarning('');
     if (!validate()) return;
 
     setIsSubmitting(true);
@@ -69,11 +92,11 @@ export default function LoginScreen({ onNavigate }) {
       replaceTo('/dashboard');
     } catch (err) {
       console.log('Login failed:', err);
-      const message = err?.isNetworkError || err?.message?.includes('connect')
-        ? 'Unable to reach the server. Please start the backend and try again.'
-        : err.message || 'Login failed. Please check your credentials.';
+      const message =
+        err?.isNetworkError || err?.message?.includes('connect')
+          ? 'Unable to reach the server. Check your connection and try again.'
+          : err.message || 'Login failed. Check your email and password.';
       setServerError(message);
-      setNetworkWarning(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -81,223 +104,351 @@ export default function LoginScreen({ onNavigate }) {
 
   const handleForgotPassword = () => {
     Alert.alert(
-      'Reset Password',
-      'Please contact your LMS administrator or enter your email to request a reset link.',
-      [{ text: 'OK' }]
+      'Forgot your password? 😅',
+      "It happens to the best of us. Message your LMS administrator and they'll reset it for you.",
+      [{ text: 'Got it' }]
     );
   };
 
   return (
-    <View style={styles.keyboardContainer}>
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <View style={styles.badgeContainer}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.brand} />
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Brand panel */}
+        <View style={[styles.hero, { paddingTop: insets.top + 24 }]}>
+          {/* Gear motifs: TUP's technological identity */}
+          <Ionicons
+            name="settings"
+            size={190}
+            color={COLORS.gold}
+            style={styles.gearBig}
+          />
+          <Ionicons
+            name="settings"
+            size={80}
+            color={COLORS.gold}
+            style={styles.gearSmall}
+          />
+
+          <View style={styles.brandRow}>
             <View style={styles.logoBadge}>
-              <Ionicons name="school" size={28} color="#2563EB" />
+              <Ionicons name="school" size={24} color={COLORS.brand} />
             </View>
-            <View>
-              <Text style={styles.brandTitle}>Technological University of the Philippines - Taguig</Text>
-              <Text style={styles.brandSubtitle}>Learning Management Portal</Text>
+            <View style={styles.brandText}>
+              <Text style={styles.brandTitle} numberOfLines={2}>
+                Technological University of the Philippines
+              </Text>
             </View>
           </View>
 
-          <Text style={styles.title}>Welcome back</Text>
+          <View style={styles.campusSticker}>
+            <Ionicons name="location" size={12} color={COLORS.brandDeep} />
+            <Text style={styles.campusStickerText}>TAGUIG CAMPUS</Text>
+          </View>
+
+          <Text style={styles.title}>Hey, TUPian! 👋</Text>
           <Text style={styles.subtitle}>
-            Enter your credentials to access your student or instructor account.
+            Log in to check your courses, deadlines, and what your profs
+            posted. Time to lock in. 🔒
           </Text>
         </View>
 
-        {/* Server Error Alert */}
-        {(serverError || networkWarning) ? (
-          <View style={styles.errorBanner}>
-            <Ionicons name="alert-circle" size={20} color="#DC2626" style={styles.errorIcon} />
-            <Text style={styles.errorBannerText}>{serverError || networkWarning}</Text>
-          </View>
-        ) : null}
+        {/* Form card with hard offset shadow */}
+        <View style={styles.formWrap}>
+          <View style={styles.formShadow} />
+          <View style={styles.formCard}>
+            {serverError ? (
+              <View style={styles.errorBanner} accessibilityRole="alert">
+                <Ionicons
+                  name="alert-circle"
+                  size={20}
+                  color={COLORS.danger}
+                  style={styles.errorIcon}
+                />
+                <Text style={styles.errorBannerText}>{serverError}</Text>
+              </View>
+            ) : null}
 
-        {/* Form Container */}
-        <View style={styles.formCard}>
-          <AuthInput
-            label="Email Address"
-            icon="mail-outline"
-            placeholder="you@domain.com"
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
-              if (serverError) setServerError('');
-            }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            error={errors.email}
-          />
+            <AuthInput
+              label="School email"
+              icon="mail-outline"
+              placeholder="you@tup.edu.ph"
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
+                if (serverError) setServerError('');
+              }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              error={errors.email}
+            />
 
-          <AuthInput
-            label="Password"
-            icon="lock-closed-outline"
-            placeholder="••••••••"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              if (errors.password) setErrors((prev) => ({ ...prev, password: null }));
-              if (serverError) setServerError('');
-            }}
-            isPassword
-            error={errors.password}
-          />
+            <AuthInput
+              label="Password"
+              icon="lock-closed-outline"
+              placeholder="Your secret password"
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                if (errors.password)
+                  setErrors((prev) => ({ ...prev, password: null }));
+                if (serverError) setServerError('');
+              }}
+              isPassword
+              error={errors.password}
+            />
 
-          <View style={styles.forgotPasswordContainer}>
-            <TouchableOpacity onPress={handleForgotPassword}>
+            <TouchableOpacity
+              onPress={handleForgotPassword}
+              style={styles.forgotPassword}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+            >
               <Text style={styles.forgotPasswordText}>Forgot password?</Text>
             </TouchableOpacity>
-          </View>
 
-          <AuthButton
-            title="Sign In"
-            onPress={handleLogin}
-            loading={isSubmitting}
-            style={styles.submitButton}
-          />
+            <AuthButton
+              title="Sign in"
+              onPress={handleLogin}
+              loading={isSubmitting}
+              style={styles.submitButton}
+            />
+          </View>
         </View>
 
-        {/* Switch to Register */}
+        {/* Switch to register */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>{"Don't have an account?"}</Text>
-          <TouchableOpacity onPress={() => navigateTo('/register')}>
-            <Text style={styles.signUpLink}> Create Account</Text>
+          <Text style={styles.footerText}>New here?</Text>
+          <TouchableOpacity
+            onPress={() => navigateTo('/register')}
+            style={styles.joinChip}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.signUpLink}>Sign up</Text>
+            <Ionicons name="arrow-forward" size={14} color={COLORS.brandDeep} />
           </TouchableOpacity>
         </View>
 
-        {/* Subtle environment status */}
-        <View style={styles.envContainer}>
-          <Ionicons name="server-outline" size={13} color="#94A3B8" />
-          <Text style={styles.envText}>Connected to: {API_BASE_URL}</Text>
-        </View>
-    </View>
+        {/* Server address, shown only in development builds */}
+        {__DEV__ ? (
+          <View style={styles.envPill}>
+            <Ionicons name="server-outline" size={12} color={COLORS.faint} />
+            <Text style={styles.envText} numberOfLines={1}>
+              {API_BASE_URL}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={{ height: insets.bottom + 16 }} />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
+  root: {
     flex: 1,
-    backgroundColor: '#F8FAFC'
+    backgroundColor: COLORS.paper
   },
   scrollContent: {
-    flexGrow: 1,
+    flexGrow: 1
+  },
+
+  /* Brand panel */
+  hero: {
+    backgroundColor: COLORS.brand,
     paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 32
+    paddingBottom: 64,
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+    overflow: 'hidden',
+    borderBottomWidth: 4,
+    borderBottomColor: COLORS.gold
   },
-  header: {
-    marginBottom: 24
+  gearBig: {
+    position: 'absolute',
+    right: -50,
+    top: -30,
+    opacity: 0.12,
+    transform: [{ rotate: '15deg' }]
   },
-  badgeContainer: {
+  gearSmall: {
+    position: 'absolute',
+    right: 90,
+    bottom: 8,
+    opacity: 0.1,
+    transform: [{ rotate: '-20deg' }]
+  },
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 12
+    gap: 12,
+    marginBottom: 20
   },
   logoBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: '#DBEAFE',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: COLORS.gold,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.surface
+  },
+  brandText: {
+    flex: 1
   },
   brandTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.surface,
+    lineHeight: 17
   },
-  brandSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500'
+  campusSticker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    backgroundColor: COLORS.gold,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    marginBottom: 18,
+    transform: [{ rotate: '-2deg' }]
+  },
+  campusStickerText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: COLORS.brandDeep
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-    marginBottom: 6
+    fontSize: 34,
+    fontWeight: '900',
+    color: COLORS.surface,
+    letterSpacing: -0.8,
+    marginBottom: 8
   },
   subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    lineHeight: 20
+    fontSize: 15,
+    lineHeight: 22,
+    color: COLORS.brandLine,
+    maxWidth: 340
+  },
+
+  /* Form */
+  formWrap: {
+    marginHorizontal: 20,
+    marginTop: -36
+  },
+  formShadow: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: -6,
+    bottom: -6,
+    backgroundColor: COLORS.gold,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: COLORS.ink
+  },
+  formCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 2,
+    borderColor: COLORS.ink
   },
   errorBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.dangerSoft,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: COLORS.dangerLine,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16
   },
   errorIcon: {
-    marginRight: 8
+    marginRight: 8,
+    marginTop: 1
   },
   errorBannerText: {
     flex: 1,
-    color: '#B91C1C',
+    color: COLORS.danger,
     fontSize: 13,
+    lineHeight: 18,
     fontWeight: '500'
   },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2
-  },
-  forgotPasswordContainer: {
-    alignItems: 'flex-end',
-    marginBottom: 16,
-    marginTop: -4
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: 2,
+    marginBottom: 18
   },
   forgotPasswordText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB'
+    fontWeight: '700',
+    color: COLORS.brand
   },
   submitButton: {
-    marginTop: 4
+    marginTop: 2
   },
+
+  /* Footer */
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24
+    gap: 10,
+    marginTop: 36
   },
   footerText: {
     fontSize: 14,
-    color: '#64748B'
+    color: COLORS.muted
+  },
+  joinChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999
   },
   signUpLink: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#2563EB'
+    fontWeight: '800',
+    color: COLORS.brandDeep
   },
-  envContainer: {
+  envPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 24,
-    gap: 6
+    alignSelf: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    maxWidth: '85%'
   },
   envText: {
     fontSize: 11,
-    color: '#94A3B8'
+    color: COLORS.faint
   }
 });
