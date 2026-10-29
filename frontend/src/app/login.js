@@ -157,20 +157,20 @@ export default function LoginScreen({ onNavigate }) {
             </View>
             <View style={styles.brandText}>
               <Text style={styles.brandTitle} numberOfLines={2}>
-                Technological University of the Philippines
+                Technological University of the Philippines - Taguig Campus
               </Text>
             </View>
           </View>
 
           <View style={styles.campusSticker}>
             <Ionicons name="location" size={12} color={COLORS.brandDeep} />
-            <Text style={styles.campusStickerText}>TAGUIG CAMPUS</Text>
+            <Text style={styles.campusStickerText}>TAGUIG</Text>
           </View>
 
-          <Text style={styles.title}>Hey, TUPian! 👋</Text>
+          <Text style={styles.title}>Hello, TUPian! </Text>
           <Text style={styles.subtitle}>
             Log in to check your courses, deadlines, and what your profs
-            posted. Time to lock in. 🔒
+            posted. Time to lock in. 
           </Text>
         </View>
 
