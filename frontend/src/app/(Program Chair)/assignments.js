@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
@@ -31,6 +39,26 @@ const COLORS = {
   dangerLine: '#FECDCA'
 };
 
+const YEAR_LEVELS = ['First Year', 'Second Year', 'Third Year', 'Fourth Year'];
+const TERMS = ['First Term', 'Second Term', 'Third Term'];
+const YEAR_OPTIONS = YEAR_LEVELS.map((value) => ({ label: value, value }));
+const TERM_OPTIONS = TERMS.map((value) => ({ label: value, value }));
+
+const ROLE_LABELS = {
+  faculty: 'Faculty',
+  instructor: 'Instructor',
+  program_chair: 'Program Chair'
+};
+
+const orderOf = (list, value) => {
+  const index = list.indexOf(value);
+  return index === -1 ? 99 : index;
+};
+
+const idOf = (item) => item.id || item._id;
+
+/* ───────────────────────── Small pieces ───────────────────────── */
+
 function Banner({ kind, children }) {
   const isError = kind === 'error';
   return (
@@ -45,60 +73,147 @@ function Banner({ kind, children }) {
   );
 }
 
-// One selectable list card (Subjects / Sections / Faculty)
-function PickerCard({ step, icon, title, count, empty, children }) {
-  return (
-    <View style={styles.pickerCard}>
-      <View style={styles.pickerHeader}>
-        <View style={styles.stepBubble}>
-          <Text style={styles.stepBubbleText}>{step}</Text>
-        </View>
-        <Ionicons name={icon} size={18} color={COLORS.brand} />
-        <Text style={styles.heading}>{title}</Text>
-        <Text style={styles.sectionCount}>{count}</Text>
-      </View>
-      {count === 0 ? (
-        <View style={styles.emptyBox}>
-          <Ionicons name="file-tray-outline" size={26} color={COLORS.faint} />
-          <Text style={styles.empty}>{empty}</Text>
-        </View>
-      ) : (
-        children
-      )}
-    </View>
-  );
-}
-
-function Option({ selected, onPress, title, text }) {
-  return (
-    <TouchableOpacity
-      style={[styles.option, selected && styles.selected]}
-      onPress={onPress}
-      activeOpacity={0.85}
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-    >
-      <View style={[styles.radio, selected && styles.radioOn]}>
-        {selected ? <Ionicons name="checkmark" size={14} color={COLORS.brandDeep} /> : null}
-      </View>
-      <View style={styles.optionText}>
-        {title ? <Text style={styles.itemTitle}>{title}</Text> : null}
-        <Text style={styles.itemText}>{text}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function SummaryChip({ label, value }) {
+function SummaryChip({ label, value, sub }) {
   return (
     <View style={[styles.chip, !value && styles.chipEmpty]}>
       <Text style={styles.chipLabel}>{label}</Text>
       <Text style={[styles.chipValue, !value && styles.chipValueEmpty]} numberOfLines={1}>
         {value || 'Not selected'}
       </Text>
+      {value && sub ? <Text style={styles.chipSub} numberOfLines={1}>{sub}</Text> : null}
     </View>
   );
 }
+
+// Chip filter row (All + options)
+function FilterRow({ label, options, value, onChange }) {
+  const all = [{ label: 'All', value: 'all' }, ...options];
+  return (
+    <View style={styles.filterRow}>
+      <Text style={styles.filterLabel}>{label}</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterChips}
+      >
+        {all.map((option) => {
+          const active = value === option.value;
+          return (
+            <TouchableOpacity
+              key={option.value}
+              onPress={() => onChange(option.value)}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+// Card that holds one step (filters + table)
+function StepCard({ step, icon, title, count, children }) {
+  return (
+    <View style={styles.stepCard}>
+      <View style={styles.stepHeader}>
+        <View style={styles.stepBubble}>
+          <Text style={styles.stepBubbleText}>{step}</Text>
+        </View>
+        <Ionicons name={icon} size={18} color={COLORS.brand} />
+        <Text style={styles.stepTitle}>{title}</Text>
+        <View style={styles.countPill}>
+          <Text style={styles.countPillText}>{count}</Text>
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Selectable data table.
+ * columns: [{ label, width?, flex?, render(data) }]
+ * rows: [{ type: 'group', key, label, sub, count } | { type: 'row', id, data }]
+ */
+function DataTable({ columns, rows, selectedId, onSelect, emptyText, maxHeight }) {
+  const hasRows = rows.some((row) => row.type === 'row');
+  if (!hasRows) {
+    return (
+      <View style={styles.emptyBox}>
+        <Ionicons name="file-tray-outline" size={26} color={COLORS.faint} />
+        <Text style={styles.empty}>{emptyText}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.table}>
+      <View style={styles.thead}>
+        <View style={styles.radioCol} />
+        {columns.map((column) => (
+          <Text
+            key={column.label}
+            style={[styles.th, column.width ? { width: column.width } : { flex: column.flex || 1 }]}
+            numberOfLines={1}
+          >
+            {column.label}
+          </Text>
+        ))}
+      </View>
+      <ScrollView style={{ maxHeight }} nestedScrollEnabled showsVerticalScrollIndicator>
+        {rows.map((row) => {
+          if (row.type === 'group') {
+            return (
+              <View key={row.key} style={styles.groupRow}>
+                <Ionicons name="school" size={14} color={COLORS.brand} />
+                <Text style={styles.groupText} numberOfLines={1}>{row.label}</Text>
+                {row.sub ? (
+                  <View style={styles.termTag}>
+                    <Text style={styles.termTagText}>{row.sub}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.groupCount}>{row.count}</Text>
+              </View>
+            );
+          }
+          const selected = selectedId === row.id;
+          return (
+            <TouchableOpacity
+              key={row.id}
+              style={[styles.tr, selected && styles.trSelected]}
+              onPress={() => onSelect(row.id)}
+              activeOpacity={0.8}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+            >
+              <View style={styles.radioCol}>
+                <View style={[styles.radio, selected && styles.radioOn]}>
+                  {selected ? <Ionicons name="checkmark" size={13} color={COLORS.brandDeep} /> : null}
+                </View>
+              </View>
+              {columns.map((column) => (
+                <View
+                  key={column.label}
+                  style={[styles.td, column.width ? { width: column.width } : { flex: column.flex || 1 }]}
+                >
+                  {column.render(row.data)}
+                </View>
+              ))}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+/* ───────────────────────── Screen ───────────────────────── */
 
 export default function AssignmentsScreen() {
   const router = useRouter();
@@ -113,6 +228,12 @@ export default function AssignmentsScreen() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
+
+  // Filters
+  const [subjectYear, setSubjectYear] = useState('all');
+  const [subjectTerm, setSubjectTerm] = useState('all');
+  const [sectionYear, setSectionYear] = useState('all');
+  const [facultyQuery, setFacultyQuery] = useState('');
 
   const isProgramChair = user?.role === 'program_chair';
   const faculty = useMemo(
@@ -156,18 +277,175 @@ export default function AssignmentsScreen() {
     }
   };
 
+  const resetSelection = () => {
+    setSelectedSubject('');
+    setSelectedSection('');
+    setSelectedFaculty('');
+  };
+
+  // Picking a subject narrows the section list to the same year level
+  const pickSubject = (id) => {
+    setSelectedSubject(id);
+    const subject = subjects.find((item) => idOf(item) === id);
+    if (subject?.yearLevel && YEAR_LEVELS.includes(subject.yearLevel)) {
+      setSectionYear(subject.yearLevel);
+    }
+  };
+
+  /* Table rows, organised by Year Level → Semester */
+  const subjectRows = useMemo(() => {
+    const map = new Map();
+    subjects.forEach((subject) => {
+      if (subjectYear !== 'all' && subject.yearLevel !== subjectYear) return;
+      if (subjectTerm !== 'all' && subject.term !== subjectTerm) return;
+      const year = subject.yearLevel || 'No year level';
+      const term = subject.term || 'No semester';
+      const key = `${year}|${term}`;
+      if (!map.has(key)) map.set(key, { key, year, term, items: [] });
+      map.get(key).items.push(subject);
+    });
+    return [...map.values()]
+      .sort((a, b) => orderOf(YEAR_LEVELS, a.year) - orderOf(YEAR_LEVELS, b.year) || orderOf(TERMS, a.term) - orderOf(TERMS, b.term))
+      .flatMap((group) => [
+        { type: 'group', key: group.key, label: group.year, sub: group.term, count: group.items.length },
+        ...group.items.map((subject) => ({ type: 'row', id: idOf(subject), data: subject }))
+      ]);
+  }, [subjects, subjectYear, subjectTerm]);
+
+  const sectionRows = useMemo(() => {
+    const map = new Map();
+    sections.forEach((section) => {
+      if (sectionYear !== 'all' && section.yearLevel !== sectionYear) return;
+      const year = section.yearLevel || 'No year level';
+      if (!map.has(year)) map.set(year, { year, items: [] });
+      map.get(year).items.push(section);
+    });
+    return [...map.values()]
+      .sort((a, b) => orderOf(YEAR_LEVELS, a.year) - orderOf(YEAR_LEVELS, b.year))
+      .flatMap((group) => [
+        { type: 'group', key: group.year, label: group.year, count: group.items.length },
+        ...group.items.map((section) => ({ type: 'row', id: idOf(section), data: section }))
+      ]);
+  }, [sections, sectionYear]);
+
+  const facultyRows = useMemo(() => {
+    const needle = facultyQuery.trim().toLowerCase();
+    return faculty
+      .filter((member) => !needle || `${member.name || ''} ${member.email || ''}`.toLowerCase().includes(needle))
+      .map((member) => ({ type: 'row', id: member.id, data: member }));
+  }, [faculty, facultyQuery]);
+
   if (isLoading || !isProgramChair) return null;
 
   const isWide = width >= 900;
-  const subjectObj = subjects.find((s) => (s.id || s._id) === selectedSubject);
-  const sectionObj = sections.find((s) => (s.id || s._id) === selectedSection);
+  const tableHeight = isWide ? 420 : 300;
+  const sideTableHeight = isWide ? 210 : 300;
+
+  const subjectObj = subjects.find((s) => idOf(s) === selectedSubject);
+  const sectionObj = sections.find((s) => idOf(s) === selectedSection);
   const facultyObj = faculty.find((m) => m.id === selectedFaculty);
+  const selectedCount = [selectedSubject, selectedSection, selectedFaculty].filter(Boolean).length;
+  const hasProgram = sections.some((section) => section.programName);
+
+  const subjectColumns = [
+    { label: 'Code', width: 86, render: (d) => <Text style={styles.codeText} numberOfLines={1}>{d.code}</Text> },
+    { label: 'Description', flex: 1, render: (d) => <Text style={styles.cellText} numberOfLines={2}>{d.description}</Text> }
+  ];
+
+  const sectionColumns = [
+    { label: 'Section', flex: 1, render: (d) => <Text style={styles.codeText} numberOfLines={1}>{d.name}</Text> },
+    ...(hasProgram
+      ? [{ label: 'Program', flex: 1.2, render: (d) => <Text style={styles.cellText} numberOfLines={2}>{d.programName || '—'}</Text> }]
+      : [])
+  ];
+
+  const facultyColumns = [
+    {
+      label: 'Name',
+      flex: 1.4,
+      render: (d) => (
+        <View>
+          <Text style={styles.nameText} numberOfLines={1}>{d.name}</Text>
+          <Text style={styles.subText} numberOfLines={1}>{d.email}</Text>
+        </View>
+      )
+    },
+    {
+      label: 'Role',
+      width: 100,
+      render: (d) => (
+        <View style={styles.roleChip}>
+          <Text style={styles.roleChipText} numberOfLines={1}>{ROLE_LABELS[d.role] || d.role}</Text>
+        </View>
+      )
+    }
+  ];
+
+  const subjectsCard = (
+    <StepCard step="1" icon="library-outline" title="Subject" count={subjects.length}>
+      <FilterRow label="Year" options={YEAR_OPTIONS} value={subjectYear} onChange={setSubjectYear} />
+      <FilterRow label="Semester" options={TERM_OPTIONS} value={subjectTerm} onChange={setSubjectTerm} />
+      <DataTable
+        columns={subjectColumns}
+        rows={subjectRows}
+        selectedId={selectedSubject}
+        onSelect={pickSubject}
+        emptyText={subjects.length === 0 ? 'No subjects found.' : 'No subjects match these filters.'}
+        maxHeight={tableHeight}
+      />
+    </StepCard>
+  );
+
+  const sectionsCard = (
+    <StepCard step="2" icon="people-outline" title="Section" count={sections.length}>
+      <FilterRow label="Year" options={YEAR_OPTIONS} value={sectionYear} onChange={setSectionYear} />
+      <DataTable
+        columns={sectionColumns}
+        rows={sectionRows}
+        selectedId={selectedSection}
+        onSelect={setSelectedSection}
+        emptyText={sections.length === 0 ? 'No sections found.' : 'No sections for this year level.'}
+        maxHeight={sideTableHeight}
+      />
+    </StepCard>
+  );
+
+  const facultyCard = (
+    <StepCard step="3" icon="person-outline" title="Faculty" count={faculty.length}>
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={16} color={COLORS.muted} />
+        <TextInput
+          style={styles.search}
+          value={facultyQuery}
+          onChangeText={setFacultyQuery}
+          placeholder="Search faculty name or email"
+          placeholderTextColor={COLORS.faint}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {facultyQuery ? (
+          <TouchableOpacity onPress={() => setFacultyQuery('')} hitSlop={10} accessibilityLabel="Clear search">
+            <Ionicons name="close-circle" size={16} color={COLORS.faint} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      <DataTable
+        columns={facultyColumns}
+        rows={facultyRows}
+        selectedId={selectedFaculty}
+        onSelect={setSelectedFaculty}
+        emptyText={faculty.length === 0 ? 'No faculty found.' : 'No faculty match your search.'}
+        maxHeight={sideTableHeight}
+      />
+    </StepCard>
+  );
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       {/* Page header */}
       <View style={styles.pageHeader}>
@@ -176,7 +454,10 @@ export default function AssignmentsScreen() {
         </View>
         <View style={styles.pageHeaderText}>
           <Text style={styles.title}>Assign Subjects</Text>
-          <Text style={styles.pageSubtitle}>Select a subject, section, then faculty member</Text>
+          <Text style={styles.pageSubtitle}>Pick a subject, a section, then a faculty member</Text>
+        </View>
+        <View style={styles.progressPill}>
+          <Text style={styles.progressPillText}>{selectedCount}/3</Text>
         </View>
       </View>
 
@@ -192,11 +473,20 @@ export default function AssignmentsScreen() {
           <View style={styles.formTitleRow}>
             <Ionicons name="link-outline" size={22} color={COLORS.brand} />
             <Text style={styles.formTitle}>Your assignment</Text>
+            {selectedCount > 0 ? (
+              <TouchableOpacity onPress={resetSelection} hitSlop={8} accessibilityRole="button">
+                <Text style={styles.resetText}>Clear</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
           <View style={[styles.chipRow, isWide && styles.chipRowWide]}>
-            <SummaryChip label="SUBJECT" value={subjectObj?.code} />
-            <SummaryChip label="SECTION" value={sectionObj?.name} />
-            <SummaryChip label="FACULTY" value={facultyObj?.name} />
+            <SummaryChip
+              label="SUBJECT"
+              value={subjectObj?.code}
+              sub={subjectObj ? `${subjectObj.yearLevel || ''}${subjectObj.term ? ` · ${subjectObj.term}` : ''}` : ''}
+            />
+            <SummaryChip label="SECTION" value={sectionObj?.name} sub={sectionObj?.yearLevel} />
+            <SummaryChip label="FACULTY" value={facultyObj?.name} sub={facultyObj?.email} />
           </View>
           <View style={styles.actionWrap}>
             <AuthButton
@@ -209,55 +499,22 @@ export default function AssignmentsScreen() {
         </View>
       </View>
 
-      {/* Pickers: 3 columns on desktop, stacked on phone */}
-      <View style={[styles.pickerGrid, isWide && styles.pickerGridWide]}>
-        <View style={styles.pickerCol}>
-          <PickerCard step="1" icon="library-outline" title="Subjects" count={subjects.length} empty="No subjects found.">
-            {subjects.map((subject) => {
-              const id = subject.id || subject._id;
-              return (
-                <Option
-                  key={id}
-                  selected={selectedSubject === id}
-                  onPress={() => setSelectedSubject(id)}
-                  title={subject.code}
-                  text={`${subject.description} · ${subject.yearLevel} · ${subject.term}`}
-                />
-              );
-            })}
-          </PickerCard>
+      {/* Desktop: subjects on the left, sections + faculty on the right. Phone: stacked. */}
+      {isWide ? (
+        <View style={styles.layoutWide}>
+          <View style={styles.leftCol}>{subjectsCard}</View>
+          <View style={styles.rightCol}>
+            {sectionsCard}
+            {facultyCard}
+          </View>
         </View>
-
-        <View style={styles.pickerCol}>
-          <PickerCard step="2" icon="people-outline" title="Sections" count={sections.length} empty="No sections found.">
-            {sections.map((section) => {
-              const id = section.id || section._id;
-              return (
-                <Option
-                  key={id}
-                  selected={selectedSection === id}
-                  onPress={() => setSelectedSection(id)}
-                  text={`${section.name} · Year ${section.yearLevel}`}
-                />
-              );
-            })}
-          </PickerCard>
+      ) : (
+        <View style={styles.stack}>
+          {subjectsCard}
+          {sectionsCard}
+          {facultyCard}
         </View>
-
-        <View style={styles.pickerCol}>
-          <PickerCard step="3" icon="person-outline" title="Faculty" count={faculty.length} empty="No faculty found.">
-            {faculty.map((member) => (
-              <Option
-                key={member.id}
-                selected={selectedFaculty === member.id}
-                onPress={() => setSelectedFaculty(member.id)}
-                title={member.name}
-                text={member.email}
-              />
-            ))}
-          </PickerCard>
-        </View>
-      </View>
+      )}
     </ScrollView>
   );
 }
@@ -281,6 +538,18 @@ const styles = StyleSheet.create({
   pageHeaderText: { flex: 1 },
   title: { fontSize: 24, fontWeight: '900', color: COLORS.brand, letterSpacing: -0.5 },
   pageSubtitle: { fontSize: 12, color: COLORS.muted, marginTop: 1 },
+  progressPill: {
+    minWidth: 44,
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
+    backgroundColor: COLORS.brand,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  progressPillText: { color: COLORS.surface, fontWeight: '800', fontSize: 14 },
 
   /* Banners */
   banner: {
@@ -318,6 +587,7 @@ const styles = StyleSheet.create({
   },
   formTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
   formTitle: { fontSize: 18, fontWeight: '900', color: COLORS.ink, flex: 1 },
+  resetText: { fontSize: 12, fontWeight: '800', color: COLORS.brand, textDecorationLine: 'underline' },
   chipRow: { gap: 8 },
   chipRowWide: { flexDirection: 'row' },
   chip: {
@@ -333,20 +603,24 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, color: COLORS.muted },
   chipValue: { fontSize: 14, fontWeight: '800', color: COLORS.brandDeep, marginTop: 2 },
   chipValueEmpty: { color: COLORS.faint, fontWeight: '600' },
+  chipSub: { fontSize: 11, color: COLORS.muted, marginTop: 1 },
   actionWrap: { marginTop: 14 },
 
-  /* Picker grid */
-  pickerGrid: { gap: 16 },
-  pickerGridWide: { flexDirection: 'row', alignItems: 'flex-start' },
-  pickerCol: { flex: 1, minWidth: 0 },
-  pickerCard: {
+  /* Layout */
+  layoutWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
+  leftCol: { flex: 1.3, minWidth: 0 },
+  rightCol: { flex: 1, minWidth: 0, gap: 20 },
+  stack: { gap: 16 },
+
+  /* Step cards */
+  stepCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 18,
     borderWidth: 2,
     borderColor: COLORS.ink,
     padding: 14
   },
-  pickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   stepBubble: {
     width: 24,
     height: 24,
@@ -356,9 +630,135 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   stepBubbleText: { color: COLORS.surface, fontSize: 12, fontWeight: '800' },
-  heading: { fontSize: 17, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.3, flex: 1 },
-  sectionCount: { fontSize: 12, fontWeight: '700', color: COLORS.muted },
+  stepTitle: { flex: 1, fontSize: 17, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.3 },
+  countPill: {
+    minWidth: 26,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: COLORS.brandSoft
+  },
+  countPillText: { fontSize: 12, fontWeight: '800', color: COLORS.brand },
 
+  /* Filters */
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  filterLabel: { width: 62, fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: COLORS.muted, textTransform: 'uppercase' },
+  filterScroll: { flex: 1 },
+  filterChips: { gap: 6, paddingRight: 8 },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.line
+  },
+  filterChipActive: { backgroundColor: COLORS.brand, borderColor: COLORS.ink },
+  filterChipText: { fontSize: 12, fontWeight: '800', color: COLORS.muted },
+  filterChipTextActive: { color: COLORS.surface },
+
+  /* Search */
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.paper,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 10
+  },
+  search: { flex: 1, paddingVertical: 9, fontSize: 14, color: COLORS.ink, outlineStyle: 'none' },
+
+  /* Data table */
+  table: {
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginTop: 4
+  },
+  thead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.goldSoft,
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.ink,
+    paddingVertical: 8,
+    paddingRight: 10
+  },
+  th: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: COLORS.brandDeep,
+    textTransform: 'uppercase',
+    paddingRight: 8
+  },
+  radioCol: { width: 38, alignItems: 'center', justifyContent: 'center' },
+  groupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.brandSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.line
+  },
+  groupText: { fontSize: 12, fontWeight: '900', color: COLORS.brand, letterSpacing: 0.3 },
+  termTag: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.ink,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    borderRadius: 999
+  },
+  termTagText: { fontSize: 10, fontWeight: '800', color: COLORS.brandDeep },
+  groupCount: { marginLeft: 'auto', fontSize: 11, fontWeight: '800', color: COLORS.muted },
+  tr: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 48,
+    paddingRight: 10,
+    paddingVertical: 8,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.line,
+    borderLeftWidth: 4,
+    borderLeftColor: 'transparent'
+  },
+  trSelected: { backgroundColor: COLORS.goldSoft, borderLeftColor: COLORS.brand },
+  td: { paddingRight: 8, justifyContent: 'center' },
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: COLORS.faint,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  radioOn: { backgroundColor: COLORS.gold, borderColor: COLORS.ink },
+  codeText: { fontSize: 13, fontWeight: '900', color: COLORS.brand },
+  cellText: { fontSize: 13, color: COLORS.ink, lineHeight: 17 },
+  nameText: { fontSize: 13, fontWeight: '800', color: COLORS.ink },
+  subText: { fontSize: 11, color: COLORS.muted, marginTop: 1 },
+  roleChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.ink,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 1
+  },
+  roleChipText: { fontSize: 10, fontWeight: '800', color: COLORS.brandDeep },
+
+  /* Empty */
   emptyBox: {
     alignItems: 'center',
     gap: 6,
@@ -366,34 +766,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.line,
     borderStyle: 'dashed',
-    padding: 18
+    padding: 18,
+    marginTop: 4
   },
-  empty: { color: COLORS.muted, textAlign: 'center', fontSize: 13 },
-
-  /* Options */
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1.5,
-    borderColor: COLORS.line,
-    marginBottom: 8
-  },
-  selected: { backgroundColor: COLORS.goldSoft, borderColor: COLORS.ink },
-  radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: COLORS.faint,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  radioOn: { backgroundColor: COLORS.gold, borderColor: COLORS.ink },
-  optionText: { flex: 1, minWidth: 0 },
-  itemTitle: { fontSize: 15, fontWeight: '800', color: COLORS.brand },
-  itemText: { fontSize: 13, color: COLORS.muted, marginTop: 2, lineHeight: 18 }
+  empty: { color: COLORS.muted, textAlign: 'center', fontSize: 13 }
 });

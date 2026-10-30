@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -63,6 +63,32 @@ const TERM_OPTIONS = [
   { label: 'Third Term', value: 'Third Term' }
 ];
 
+const EMPTY_FORM = { code: '', description: '', yearLevel: '', term: '' };
+
+const optionIndex = (list, value) => {
+  const index = list.findIndex((option) => option.value === value);
+  return index === -1 ? 99 : index;
+};
+
+// Group subjects by Year Level, then Semester (with optional filters)
+const groupSubjects = (list, yearFilter = 'all', termFilter = 'all') => {
+  const map = new Map();
+  list.forEach((subject) => {
+    if (yearFilter !== 'all' && subject.yearLevel !== yearFilter) return;
+    if (termFilter !== 'all' && subject.term !== termFilter) return;
+    const year = subject.yearLevel || 'No year level';
+    const term = subject.term || 'No semester';
+    const key = `${year}|${term}`;
+    if (!map.has(key)) map.set(key, { key, year, term, items: [] });
+    map.get(key).items.push(subject);
+  });
+  return [...map.values()].sort(
+    (a, b) =>
+      optionIndex(YEAR_LEVEL_OPTIONS, a.year) - optionIndex(YEAR_LEVEL_OPTIONS, b.year) ||
+      optionIndex(TERM_OPTIONS, a.term) - optionIndex(TERM_OPTIONS, b.term)
+  );
+};
+
 export default function SubjectsScreen() {
   const { user } = useAuth();
   if (user?.role === 'student') return <StudentSubjectsScreen />;
@@ -119,20 +145,124 @@ function EmptyState({ icon = 'library-outline', children }) {
   );
 }
 
-function SectionHeading({ children, count }) {
-  return (
-    <View style={styles.sectionHeaderRow}>
-      <Text style={styles.heading}>{children}</Text>
-      {typeof count === 'number' ? <Text style={styles.sectionCount}>{count} total</Text> : null}
-    </View>
-  );
-}
-
 function Chip({ icon, children, tone = 'gold' }) {
   return (
     <View style={[styles.chip, tone === 'plain' && styles.chipPlain]}>
       {icon ? <Ionicons name={icon} size={12} color={COLORS.brandDeep} /> : null}
-      <Text style={styles.chipText}>{children}</Text>
+      <Text style={styles.chipText} numberOfLines={1}>{children}</Text>
+    </View>
+  );
+}
+
+// Horizontal chip filter (All + options) so long lists stay short
+function FilterRow({ label, options, value, onChange }) {
+  const all = [{ label: 'All', value: 'all' }, ...options];
+  return (
+    <View style={styles.filterRow}>
+      <Text style={styles.filterLabel}>{label}</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterChips}
+      >
+        {all.map((option) => {
+          const active = value === option.value;
+          return (
+            <TouchableOpacity
+              key={option.value}
+              onPress={() => onChange(option.value)}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+// Collapsible "Year Level · Semester" group with a grid of cards inside
+function SubjectGroups({ groups, closed, onToggle, isWide, renderCard, emptyText }) {
+  if (groups.length === 0) return <EmptyState>{emptyText}</EmptyState>;
+  return groups.map((group) => {
+    const open = !closed[group.key];
+    return (
+      <View key={group.key} style={styles.group}>
+        <TouchableOpacity
+          style={styles.groupHeader}
+          onPress={() => onToggle(group.key)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+        >
+          <View style={styles.groupIcon}>
+            <Ionicons name="school" size={15} color={COLORS.surface} />
+          </View>
+          <Text style={styles.groupTitle} numberOfLines={1}>{group.year}</Text>
+          <View style={styles.termTag}>
+            <Text style={styles.termTagText}>{group.term}</Text>
+          </View>
+          <View style={styles.groupCount}>
+            <Text style={styles.groupCountText}>{group.items.length}</Text>
+          </View>
+          <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.brand} />
+        </TouchableOpacity>
+        {open ? (
+          <View style={[styles.grid, isWide && styles.gridWide]}>
+            {group.items.map((subject) => (
+              <View key={`${subject.id || subject._id}-${subject.sectionId || ''}`} style={[styles.gridCell, isWide && styles.gridCellWide]}>
+                {renderCard(subject)}
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  });
+}
+
+// Compact subject card
+function SubjectCard({ subject, chips, onEdit, onDelete }) {
+  return (
+    <View style={styles.item}>
+      <View style={styles.itemTopRow}>
+        <View style={styles.codeChip}>
+          <Text style={styles.codeChipText}>{subject.code}</Text>
+        </View>
+        {chips}
+        {onEdit || onDelete ? (
+          <View style={styles.iconActions}>
+            {onEdit ? (
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={onEdit}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${subject.code}`}
+              >
+                <Ionicons name="create-outline" size={16} color={COLORS.brand} />
+              </TouchableOpacity>
+            ) : null}
+            {onDelete ? (
+              <TouchableOpacity
+                style={[styles.iconBtn, styles.iconBtnDanger]}
+                onPress={onDelete}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${subject.code}`}
+              >
+                <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.itemText} numberOfLines={2}>{subject.description}</Text>
     </View>
   );
 }
@@ -141,15 +271,24 @@ function Chip({ icon, children, tone = 'gold' }) {
 
 function ProgramChairSubjectsScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const scrollRef = useRef(null);
   const { user, token, isLoading } = useAuth();
   const [subjects, setSubjects] = useState([]);
-  const [form, setForm] = useState({ code: '', description: '', yearLevel: '', term: '' });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [assignedSubjects, setAssignedSubjects] = useState([]);
+  const [showForm, setShowForm] = useState(false); // phone only: form is collapsed by default
+  const [assignedOpen, setAssignedOpen] = useState(false);
+  const [yearFilter, setYearFilter] = useState('all');
+  const [termFilter, setTermFilter] = useState('all');
+  const [closedGroups, setClosedGroups] = useState({});
   const isProgramChair = user?.role === 'program_chair';
+  const isWide = width >= 900;
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -172,6 +311,14 @@ function ProgramChairSubjectsScreen() {
     }
   }, [isLoading, isProgramChair, loadData, router]);
 
+  const groups = useMemo(() => groupSubjects(subjects, yearFilter, termFilter), [subjects, yearFilter, termFilter]);
+  const assignedGroups = useMemo(() => groupSubjects(assignedSubjects), [assignedSubjects]);
+
+  const resetForm = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  };
+
   const submitSubject = async () => {
     setError('');
     setMessage('');
@@ -181,11 +328,12 @@ function ProgramChairSubjectsScreen() {
         ? await apiUpdateSubject(token, editingId, form)
         : await apiCreateSubject(token, form);
       setSubjects((current) => editingId
-        ? current.map((item) => (item.id === editingId ? subject : item))
+        ? current.map((item) => ((item.id || item._id) === editingId ? subject : item))
         : [...current, subject]);
-      setForm({ code: '', description: '', yearLevel: '', term: '' });
-      setEditingId(null);
+      resetForm();
+      setShowForm(false);
       setMessage(editingId ? 'Subject updated successfully.' : 'Subject created successfully.');
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
     } catch (err) {
       setError(err.message || 'Failed to create subject.');
     } finally {
@@ -203,6 +351,8 @@ function ProgramChairSubjectsScreen() {
     });
     setError('');
     setMessage('');
+    setShowForm(true);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const deleteSubject = (subjectId) => {
@@ -210,10 +360,7 @@ function ProgramChairSubjectsScreen() {
       try {
         await apiDeleteSubject(token, subjectId);
         setSubjects((current) => current.filter((item) => (item.id || item._id) !== subjectId));
-        if (editingId === subjectId) {
-          setEditingId(null);
-          setForm({ code: '', description: '', yearLevel: '', term: '' });
-        }
+        if (editingId === subjectId) resetForm();
         setMessage('Subject deleted successfully.');
       } catch (err) {
         setError(err.message || 'Failed to delete subject.');
@@ -232,9 +379,97 @@ function ProgramChairSubjectsScreen() {
     ]);
   };
 
+  const toggleGroup = (key) => setClosedGroups((current) => ({ ...current, [key]: !current[key] }));
+
   if (isLoading || !isProgramChair) return null;
+
+  const formCard = (
+    <View style={styles.cardWrap}>
+      <View style={styles.cardShadow} />
+      <View style={styles.card}>
+        <View style={styles.formTitleRow}>
+          <Ionicons
+            name={editingId ? 'create-outline' : 'add-circle-outline'}
+            size={22}
+            color={COLORS.brand}
+          />
+          <Text style={styles.formTitle}>{editingId ? 'Update Subject' : 'Create Subject'}</Text>
+          {editingId ? (
+            <View style={styles.editingPill}>
+              <Text style={styles.editingPillText}>EDITING</Text>
+            </View>
+          ) : null}
+        </View>
+        <AuthInput label="Subject Code" icon="code-outline" placeholder="e.g. IT101" value={form.code} onChangeText={(code) => setForm({ ...form, code: code.toUpperCase() })} autoCapitalize="characters" />
+        <AuthInput label="Subject Description" icon="document-text-outline" placeholder="Enter subject description" value={form.description} onChangeText={(description) => setForm({ ...form, description })} />
+        <DropdownSelect label="Year Level" icon="school-outline" placeholder="Select year level" options={YEAR_LEVEL_OPTIONS} value={form.yearLevel} onSelect={(val) => setForm({ ...form, yearLevel: val })} />
+        <DropdownSelect label="Semester" icon="calendar-outline" placeholder="Select semester" options={TERM_OPTIONS} value={form.term} onSelect={(term) => setForm({ ...form, term })} />
+        <View style={styles.formActions}>
+          <AuthButton title={editingId ? 'Update Subject' : 'Create Subject'} onPress={submitSubject} loading={isSaving} />
+          {editingId ? <AuthButton title="Cancel Edit" onPress={resetForm} variant="outline" /> : null}
+        </View>
+      </View>
+    </View>
+  );
+
+  const listPanel = (
+    <View>
+      {/* Assigned to me: collapsed by default so it doesn't push the list down */}
+      <TouchableOpacity
+        style={styles.panelToggle}
+        onPress={() => setAssignedOpen((open) => !open)}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: assignedOpen }}
+      >
+        <Ionicons name="person-circle-outline" size={20} color={COLORS.brand} />
+        <Text style={styles.panelToggleText}>Assigned to me</Text>
+        <View style={styles.groupCount}>
+          <Text style={styles.groupCountText}>{assignedSubjects.length}</Text>
+        </View>
+        <Ionicons name={assignedOpen ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.brand} />
+      </TouchableOpacity>
+      {assignedOpen ? (
+        <View style={styles.panelBody}>
+          <SubjectGroups
+            groups={assignedGroups}
+            closed={closedGroups}
+            onToggle={toggleGroup}
+            isWide={isWide}
+            emptyText="No subjects assigned to you yet."
+            renderCard={(subject) => (
+              <SubjectCard subject={subject} chips={<Chip icon="people-outline">{subject.sectionName}</Chip>} />
+            )}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.heading}>Available subjects</Text>
+        <Text style={styles.sectionCount}>{subjects.length} total</Text>
+      </View>
+      <FilterRow label="Year" options={YEAR_LEVEL_OPTIONS} value={yearFilter} onChange={setYearFilter} />
+      <FilterRow label="Semester" options={TERM_OPTIONS} value={termFilter} onChange={setTermFilter} />
+      <SubjectGroups
+        groups={groups}
+        closed={closedGroups}
+        onToggle={toggleGroup}
+        isWide={isWide}
+        emptyText={subjects.length === 0 ? 'No subjects created yet. Make your first one 👆' : 'No subjects match these filters.'}
+        renderCard={(subject) => (
+          <SubjectCard
+            subject={subject}
+            onEdit={() => editSubject(subject)}
+            onDelete={() => deleteSubject(subject.id || subject._id)}
+          />
+        )}
+      />
+    </View>
+  );
+
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
@@ -249,68 +484,32 @@ function ProgramChairSubjectsScreen() {
       {error ? <Banner kind="error">{error}</Banner> : null}
       {message ? <Banner kind="success">{message}</Banner> : null}
 
-      <SectionHeading count={assignedSubjects.length}>Assigned Subjects</SectionHeading>
-      {assignedSubjects.length === 0 ? (
-        <EmptyState>No subjects assigned to you yet.</EmptyState>
-      ) : assignedSubjects.map((subject) => (
-        <View key={`${subject.id}-${subject.sectionId}`} style={styles.item}>
-          <View style={styles.itemTopRow}>
-            <View style={styles.codeChip}>
-              <Text style={styles.codeChipText}>{subject.code}</Text>
-            </View>
-            <Chip icon="people-outline">{subject.sectionName}</Chip>
-            <Chip icon="calendar-outline">{subject.term}</Chip>
-          </View>
-          <Text style={styles.itemText}>{subject.description}</Text>
+      {isWide ? (
+        // Desktop: form on the left, filtered list on the right
+        <View style={styles.layoutWide}>
+          <View style={styles.formCol}>{formCard}</View>
+          <View style={styles.listCol}>{listPanel}</View>
         </View>
-      ))}
-
-      <View style={styles.cardWrap}>
-        <View style={styles.cardShadow} />
-        <View style={styles.card}>
-          <View style={styles.formTitleRow}>
-            <Ionicons
-              name={editingId ? 'create-outline' : 'add-circle-outline'}
-              size={22}
-              color={COLORS.brand}
-            />
-            <Text style={styles.formTitle}>{editingId ? 'Update Subject' : 'Create Subject'}</Text>
-            {editingId ? (
-              <View style={styles.editingPill}>
-                <Text style={styles.editingPillText}>EDITING</Text>
-              </View>
-            ) : null}
-          </View>
-          <AuthInput label="Subject Code" icon="code-outline" placeholder="e.g. IT101" value={form.code} onChangeText={(code) => setForm({ ...form, code: code.toUpperCase() })} autoCapitalize="characters" />
-          <AuthInput label="Subject Description" icon="document-text-outline" placeholder="Enter subject description" value={form.description} onChangeText={(description) => setForm({ ...form, description })} />
-          <DropdownSelect label="Year Level" icon="school-outline" placeholder="Select year level" options={YEAR_LEVEL_OPTIONS} value={form.yearLevel} onSelect={(val) => setForm({ ...form, yearLevel: val })} />
-          <DropdownSelect label="Semester" icon="calendar-outline" placeholder="Select semester" options={TERM_OPTIONS} value={form.term} onSelect={(term) => setForm({ ...form, term })} />
-          <View style={styles.formActions}>
-            <AuthButton title={editingId ? 'Update Subject' : 'Create Subject'} onPress={submitSubject} loading={isSaving} />
-            {editingId ? <AuthButton title="Cancel Edit" onPress={() => { setEditingId(null); setForm({ code: '', description: '', yearLevel: '', term: '' }); }} variant="outline" /> : null}
-          </View>
+      ) : (
+        // Phone: form hides behind a button so the list is right there
+        <View>
+          <TouchableOpacity
+            style={[styles.createToggle, showForm && styles.createToggleOpen]}
+            onPress={() => {
+              if (showForm && editingId) resetForm();
+              setShowForm((open) => !open);
+            }}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showForm }}
+          >
+            <Ionicons name={showForm ? 'close' : 'add'} size={18} color={COLORS.brandDeep} />
+            <Text style={styles.createToggleText}>{showForm ? 'Close form' : 'Create subject'}</Text>
+          </TouchableOpacity>
+          {showForm ? formCard : null}
+          {listPanel}
         </View>
-      </View>
-
-      <SectionHeading count={subjects.length}>Available Subjects</SectionHeading>
-      {subjects.length === 0 ? (
-        <EmptyState>No subjects created yet. Make your first one above 👆</EmptyState>
-      ) : subjects.map((subject) => (
-        <View key={subject.id || subject._id} style={styles.item}>
-          <View style={styles.itemTopRow}>
-            <View style={styles.codeChip}>
-              <Text style={styles.codeChipText}>{subject.code}</Text>
-            </View>
-            <Chip icon="ribbon-outline">{subject.yearLevel}</Chip>
-            <Chip icon="calendar-outline">{subject.term}</Chip>
-          </View>
-          <Text style={styles.itemText}>{subject.description}</Text>
-          <View style={styles.actions}>
-            <AuthButton title="Edit" onPress={() => editSubject(subject)} variant="outline" style={styles.actionButton} />
-            <AuthButton title="Delete" onPress={() => deleteSubject(subject.id || subject._id)} variant="outline" style={[styles.actionButton, styles.deleteButton]} textStyle={styles.deleteText} />
-          </View>
-        </View>
-      ))}
+      )}
     </ScrollView>
   );
 }
@@ -319,8 +518,12 @@ function ProgramChairSubjectsScreen() {
 
 function TeachingSubjectsScreen() {
   const { token, isLoading } = useAuth();
+  const { width } = useWindowDimensions();
   const [subjects, setSubjects] = useState([]);
   const [error, setError] = useState('');
+  const [yearFilter, setYearFilter] = useState('all');
+  const [termFilter, setTermFilter] = useState('all');
+  const [closedGroups, setClosedGroups] = useState({});
 
   useEffect(() => {
     if (!token) return;
@@ -329,7 +532,10 @@ function TeachingSubjectsScreen() {
     });
   }, [token]);
 
+  const groups = useMemo(() => groupSubjects(subjects, yearFilter, termFilter), [subjects, yearFilter, termFilter]);
+
   if (isLoading) return null;
+  const isWide = width >= 900;
   return (
     <ScrollView
       style={styles.container}
@@ -343,23 +549,22 @@ function TeachingSubjectsScreen() {
       />
       <StaffHeader role="faculty" activeRoute="/subjects" />
       {error ? <Banner kind="error">{error}</Banner> : null}
-      {subjects.length === 0 ? (
-        <EmptyState>No subjects have been assigned to you yet.</EmptyState>
-      ) : subjects.map((subject) => (
-        <View key={`${subject.id}-${subject.sectionId}`} style={styles.item}>
-          <View style={styles.itemTopRow}>
-            <View style={styles.codeChip}>
-              <Text style={styles.codeChipText}>{subject.code}</Text>
-            </View>
-            <Chip icon="people-outline">{subject.sectionName}</Chip>
-          </View>
-          <Text style={styles.itemText}>{subject.description}</Text>
-          <View style={styles.itemTopRow}>
-            <Chip icon="ribbon-outline" tone="plain">{subject.yearLevel}</Chip>
-            <Chip icon="calendar-outline" tone="plain">{subject.term}</Chip>
-          </View>
-        </View>
-      ))}
+      {subjects.length > 0 ? (
+        <>
+          <FilterRow label="Year" options={YEAR_LEVEL_OPTIONS} value={yearFilter} onChange={setYearFilter} />
+          <FilterRow label="Semester" options={TERM_OPTIONS} value={termFilter} onChange={setTermFilter} />
+        </>
+      ) : null}
+      <SubjectGroups
+        groups={groups}
+        closed={closedGroups}
+        onToggle={(key) => setClosedGroups((current) => ({ ...current, [key]: !current[key] }))}
+        isWide={isWide}
+        emptyText={subjects.length === 0 ? 'No subjects have been assigned to you yet.' : 'No subjects match these filters.'}
+        renderCard={(subject) => (
+          <SubjectCard subject={subject} chips={<Chip icon="people-outline">{subject.sectionName}</Chip>} />
+        )}
+      />
     </ScrollView>
   );
 }
@@ -414,7 +619,8 @@ function StudentSubjectsScreen() {
   if (isLoading || user?.role !== 'student') return null;
   const visibleSubjects = data.subjects.filter((subject) => subject.term === selectedTerm);
   const enrolledCount = data.subjects.filter((subject) => subject.enrolled).length;
-  const isWideLayout = width >= 820;
+  const isWide = width >= 900;
+  const termTabs = [...data.terms].sort((a, b) => optionIndex(TERM_OPTIONS, a) - optionIndex(TERM_OPTIONS, b));
 
   return (
     <ScrollView
@@ -429,13 +635,6 @@ function StudentSubjectsScreen() {
       />
       <StudentHeader activeRoute="/subjects" />
 
-      <View style={styles.helperBox}>
-        <Ionicons name="information-circle-outline" size={18} color={COLORS.goldDeep} />
-        <Text style={styles.helper}>
-          Choose available subjects for your year level and semester. You are responsible for completing your enrollment.
-        </Text>
-      </View>
-
       {error ? <Banner kind="error">{error}</Banner> : null}
       {message ? <Banner kind="success">{message}</Banner> : null}
 
@@ -447,75 +646,89 @@ function StudentSubjectsScreen() {
         </EmptyState>
       ) : (
         <>
-          <View style={styles.studentYearLevelCard}>
-            <Ionicons name="ribbon" size={16} color={COLORS.brandDeep} />
-            <Text style={styles.studentYearLevelLabel}>Your year level</Text>
-            <Text style={styles.studentYearLevel}>{data.yearLevel}</Text>
+          {/* Year level + short hint in one compact strip */}
+          <View style={styles.infoStrip}>
+            <View style={styles.yearBadge}>
+              <Ionicons name="ribbon" size={14} color={COLORS.brandDeep} />
+              <Text style={styles.yearBadgeText}>{data.yearLevel}</Text>
+            </View>
+            <Text style={styles.infoText}>
+              Pick a semester, then enroll in the subjects you need.
+            </Text>
           </View>
-          <View style={styles.studentFilterCard}>
-            <DropdownSelect label="Semester" icon="calendar-outline" placeholder="Select semester" options={TERM_OPTIONS} value={selectedTerm} onSelect={setSelectedTerm} />
+
+          {/* Semester tabs (replaces the dropdown) */}
+          <View style={styles.tabs}>
+            {termTabs.map((term) => {
+              const active = term === selectedTerm;
+              const count = data.subjects.filter((subject) => subject.term === term).length;
+              return (
+                <TouchableOpacity
+                  key={term}
+                  style={[styles.tab, active && styles.tabActive]}
+                  onPress={() => setSelectedTerm(term)}
+                  activeOpacity={0.85}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>{term}</Text>
+                  <View style={[styles.tabCount, active && styles.tabCountActive]}>
+                    <Text style={[styles.tabCountText, active && styles.tabCountTextActive]}>{count}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+
           {visibleSubjects.length === 0 ? (
             <EmptyState>No subjects are available for this semester.</EmptyState>
-          ) : visibleSubjects.map((subject) => (
-            <View key={subject.id} style={[styles.studentSubjectCard, isWideLayout && styles.studentSubjectCardWide]}>
-              <View style={styles.studentSubjectDetails}>
-                <View style={styles.studentSubjectHeading}>
-                  <View style={styles.studentSubjectIcon}>
-                    <Ionicons name="library-outline" size={21} color={COLORS.brand} />
-                  </View>
-                  <View style={styles.studentSubjectTitleBlock}>
-                    <Text style={styles.studentSubjectCode}>{subject.code}</Text>
-                    <Text style={styles.studentSubjectMeta}>{subject.yearLevel} · {subject.term}</Text>
-                  </View>
-                  {subject.enrolled ? (
-                    <View style={styles.enrolledBadge}>
-                      <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
-                      <Text style={styles.enrolledBadgeText}>Enrolled</Text>
+          ) : (
+            <View style={[styles.grid, isWide && styles.gridWide]}>
+              {visibleSubjects.map((subject) => (
+                <View key={subject.id} style={[styles.gridCell, isWide && styles.gridCellWide]}>
+                  <View style={[styles.studentCard, subject.enrolled && styles.studentCardEnrolled]}>
+                    <View style={styles.studentCardTop}>
+                      <View style={styles.codeChip}>
+                        <Text style={styles.codeChipText}>{subject.code}</Text>
+                      </View>
+                      {subject.enrolled ? (
+                        <View style={styles.enrolledBadge}>
+                          <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
+                          <Text style={styles.enrolledBadgeText}>Enrolled</Text>
+                        </View>
+                      ) : null}
                     </View>
-                  ) : null}
+                    <Text style={styles.studentDescription} numberOfLines={3}>{subject.description}</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.enrollButton,
+                        subject.enrolled && styles.enrollButtonEnrolled,
+                        (subject.enrolled || isSaving) && styles.enrollButtonDisabled
+                      ]}
+                      onPress={() => enroll(subject.id)}
+                      disabled={subject.enrolled || isSaving}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel={subject.enrolled ? `${subject.code} enrolled` : `Enroll in ${subject.code}`}
+                    >
+                      {isSaving && !subject.enrolled ? (
+                        <ActivityIndicator size="small" color={COLORS.surface} />
+                      ) : (
+                        <Ionicons
+                          name={subject.enrolled ? 'checkmark' : 'add'}
+                          size={18}
+                          color={subject.enrolled ? COLORS.success : COLORS.surface}
+                        />
+                      )}
+                      <Text style={[styles.enrollButtonText, subject.enrolled && styles.enrollButtonTextEnrolled]}>
+                        {subject.enrolled ? 'Enrolled' : 'Enroll'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <Text style={styles.studentSubjectDescription}>{subject.description}</Text>
-              </View>
-              <View style={[styles.studentSubjectActionPanel, isWideLayout && styles.studentSubjectActionPanelWide]}>
-                <View style={styles.studentSubjectStatusRow}>
-                  <Ionicons
-                    name={subject.enrolled ? 'checkmark-circle' : 'time-outline'}
-                    size={18}
-                    color={subject.enrolled ? COLORS.success : COLORS.muted}
-                  />
-                  <Text style={[styles.studentSubjectStatus, subject.enrolled && styles.studentSubjectStatusEnrolled]}>
-                    {subject.enrolled ? 'You are enrolled' : 'Available to enroll'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.studentEnrollButton,
-                    subject.enrolled && styles.studentEnrollButtonEnrolled,
-                    (subject.enrolled || isSaving) && styles.studentEnrollButtonDisabled
-                  ]}
-                  onPress={() => enroll(subject.id)}
-                  disabled={subject.enrolled || isSaving}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={subject.enrolled ? `${subject.code} enrolled` : `Enroll in ${subject.code}`}
-                >
-                  {isSaving && !subject.enrolled ? (
-                    <ActivityIndicator size="small" color={COLORS.surface} />
-                  ) : (
-                    <Ionicons
-                      name={subject.enrolled ? 'checkmark' : 'add'}
-                      size={18}
-                      color={subject.enrolled ? COLORS.success : COLORS.surface}
-                    />
-                  )}
-                  <Text style={[styles.studentEnrollButtonText, subject.enrolled && styles.studentEnrollButtonTextEnrolled]}>
-                    {subject.enrolled ? 'Enrolled' : 'Enroll in subject'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              ))}
             </View>
-          ))}
+          )}
         </>
       )}
     </ScrollView>
@@ -568,55 +781,33 @@ const styles = StyleSheet.create({
   bannerSuccess: { backgroundColor: COLORS.successSoft, borderColor: COLORS.successLine },
   bannerText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 
-  /* Helper / year level */
-  helperBox: {
+  /* Desktop two-column layout */
+  layoutWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 28 },
+  formCol: { width: 380 },
+  listCol: { flex: 1, minWidth: 0 },
+
+  /* Phone: create toggle */
+  createToggle: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    backgroundColor: COLORS.goldSoft,
+    backgroundColor: COLORS.gold,
     borderWidth: 2,
     borderColor: COLORS.ink,
     borderRadius: 14,
-    padding: 12,
+    paddingVertical: 12,
     marginBottom: 16
   },
-  helper: { flex: 1, fontSize: 13, color: COLORS.brandDeep, lineHeight: 19 },
-  yearLevelPill: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.gold,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginBottom: 14,
-    transform: [{ rotate: '-1deg' }]
-  },
-  yearLevel: { fontSize: 13, fontWeight: '800', color: COLORS.brandDeep },
-  studentYearLevelCard: {
-    alignSelf: 'flex-start',
-    minHeight: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1.5,
-    borderColor: COLORS.line,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 14
-  },
-  studentYearLevelLabel: { color: COLORS.muted, fontSize: 12 },
-  studentYearLevel: { color: COLORS.brandDeep, fontSize: 13, fontWeight: '800' },
-  studentFilterCard: { marginBottom: 10 },
+  createToggleOpen: { backgroundColor: COLORS.goldSoft },
+  createToggleText: { fontSize: 14, fontWeight: '900', color: COLORS.brandDeep },
 
   /* Section headings */
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
     marginTop: 6
   },
   heading: { fontSize: 18, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.3 },
@@ -637,7 +828,7 @@ const styles = StyleSheet.create({
   empty: { color: COLORS.muted, textAlign: 'center', fontSize: 13, lineHeight: 19 },
 
   /* Form card with hard offset shadow */
-  cardWrap: { marginTop: 14, marginBottom: 28, marginRight: 6 },
+  cardWrap: { marginBottom: 24, marginRight: 6 },
   cardShadow: {
     position: 'absolute',
     top: 6,
@@ -668,17 +859,97 @@ const styles = StyleSheet.create({
   editingPillText: { fontSize: 10, fontWeight: '800', letterSpacing: 1, color: COLORS.brandDeep },
   formActions: { gap: 8, marginTop: 4 },
 
-  /* Subject cards */
-  item: {
+  /* Collapsible "Assigned to me" */
+  panelToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 15,
     borderWidth: 2,
     borderColor: COLORS.ink,
-    marginBottom: 12
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    marginBottom: 14
   },
-  itemEnrolled: { backgroundColor: COLORS.successSoft, borderColor: COLORS.success },
-  itemTopRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 },
+  panelToggleText: { flex: 1, fontSize: 15, fontWeight: '900', color: COLORS.ink },
+  panelBody: { marginBottom: 8 },
+
+  /* Filters */
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  filterLabel: { width: 62, fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: COLORS.muted, textTransform: 'uppercase' },
+  filterScroll: { flex: 1 },
+  filterChips: { gap: 6, paddingRight: 8 },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderColor: COLORS.line
+  },
+  filterChipActive: { backgroundColor: COLORS.brand, borderColor: COLORS.ink },
+  filterChipText: { fontSize: 12, fontWeight: '800', color: COLORS.muted },
+  filterChipTextActive: { color: COLORS.surface },
+
+  /* Groups (Year Level · Semester) */
+  group: { marginTop: 10 },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10
+  },
+  groupIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: COLORS.brand,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  groupTitle: { flex: 1, fontSize: 15, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.2 },
+  termTag: {
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 1.5,
+    borderColor: COLORS.ink,
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+    borderRadius: 999
+  },
+  termTagText: { fontSize: 11, fontWeight: '800', color: COLORS.brandDeep },
+  groupCount: {
+    minWidth: 24,
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: COLORS.brandSoft
+  },
+  groupCountText: { fontSize: 12, fontWeight: '800', color: COLORS.brand },
+
+  /* Card grid: 1 column on phone, 2 on desktop */
+  grid: { marginBottom: 6 },
+  gridWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  gridCell: { marginBottom: 10 },
+  gridCellWide: { width: '49%', marginBottom: 0 },
+
+  /* Compact subject cards */
+  item: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 2,
+    borderColor: COLORS.ink
+  },
+  itemTopRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 6 },
   codeChip: {
     backgroundColor: COLORS.brand,
     paddingHorizontal: 10,
@@ -695,12 +966,81 @@ const styles = StyleSheet.create({
     borderColor: COLORS.ink,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 999
+    borderRadius: 999,
+    maxWidth: 160
   },
   chipPlain: { backgroundColor: COLORS.surface, borderColor: COLORS.line },
   chipText: { fontSize: 11, fontWeight: '700', color: COLORS.brandDeep },
-  itemText: { fontSize: 14, color: COLORS.ink, lineHeight: 20, marginBottom: 4 },
-  itemButtonGap: { marginTop: 8 },
+  itemText: { fontSize: 13, color: COLORS.ink, lineHeight: 18 },
+  iconActions: { flexDirection: 'row', gap: 6, marginLeft: 'auto' },
+  iconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: COLORS.ink,
+    backgroundColor: COLORS.goldSoft,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  iconBtnDanger: { backgroundColor: COLORS.dangerSoft, borderColor: COLORS.danger },
+
+  /* Student: info strip + semester tabs */
+  infoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  yearBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.gold,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999
+  },
+  yearBadgeText: { fontSize: 13, fontWeight: '900', color: COLORS.brandDeep },
+  infoText: { flex: 1, fontSize: 12, color: COLORS.muted, lineHeight: 17 },
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.line
+  },
+  tabActive: { backgroundColor: COLORS.brand, borderColor: COLORS.ink },
+  tabText: { fontSize: 13, fontWeight: '800', color: COLORS.muted },
+  tabTextActive: { color: COLORS.surface },
+  tabCount: {
+    minWidth: 20,
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+    backgroundColor: COLORS.brandSoft
+  },
+  tabCountActive: { backgroundColor: COLORS.gold },
+  tabCountText: { fontSize: 11, fontWeight: '800', color: COLORS.brand },
+  tabCountTextActive: { color: COLORS.brandDeep },
+
+  /* Student subject cards */
+  studentCard: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 2,
+    borderColor: COLORS.ink
+  },
+  studentCardEnrolled: { backgroundColor: COLORS.successSoft, borderColor: COLORS.success },
+  studentCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  studentDescription: { fontSize: 13, color: COLORS.ink, lineHeight: 18, marginBottom: 10 },
   enrolledBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -713,67 +1053,20 @@ const styles = StyleSheet.create({
     borderRadius: 999
   },
   enrolledBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.success },
-
-  /* Student enrollment cards */
-  studentSubjectCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: COLORS.line,
-    marginBottom: 14,
-    overflow: 'hidden'
-  },
-  studentSubjectCardWide: { flexDirection: 'row', alignItems: 'stretch' },
-  studentSubjectDetails: { flex: 1, minWidth: 0, padding: 18 },
-  studentSubjectHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  studentSubjectIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.goldSoft
-  },
-  studentSubjectTitleBlock: { flex: 1, minWidth: 0 },
-  studentSubjectCode: { color: COLORS.ink, fontSize: 17, fontWeight: '900' },
-  studentSubjectMeta: { marginTop: 4, color: COLORS.muted, fontSize: 12 },
-  studentSubjectDescription: { marginTop: 14, color: COLORS.ink, fontSize: 14, lineHeight: 21 },
-  studentSubjectActionPanel: {
-    padding: 16,
-    backgroundColor: COLORS.goldSoft,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.line
-  },
-  studentSubjectActionPanelWide: {
-    width: 250,
-    justifyContent: 'center',
-    borderTopWidth: 0,
-    borderLeftWidth: 1,
-    borderLeftColor: COLORS.line
-  },
-  studentSubjectStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  studentSubjectStatus: { color: COLORS.muted, fontSize: 12, fontWeight: '700' },
-  studentSubjectStatusEnrolled: { color: COLORS.success },
-  studentEnrollButton: {
-    minHeight: 44,
+  enrollButton: {
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     paddingHorizontal: 14,
     borderRadius: 10,
     backgroundColor: COLORS.brand,
-    borderWidth: 1.5,
-    borderColor: COLORS.brandDeep
+    borderWidth: 2,
+    borderColor: COLORS.ink
   },
-  studentEnrollButtonEnrolled: { backgroundColor: COLORS.surface, borderColor: COLORS.successLine },
-  studentEnrollButtonDisabled: { opacity: 0.9 },
-  studentEnrollButtonText: { color: COLORS.surface, fontSize: 13, fontWeight: '800' },
-  studentEnrollButtonTextEnrolled: { color: COLORS.success },
-
-  /* Actions */
-  actions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  actionButton: { flex: 1, marginVertical: 0, height: 42 },
-  deleteButton: { borderColor: COLORS.danger },
-  deleteText: { color: COLORS.danger }
+  enrollButtonEnrolled: { backgroundColor: COLORS.surface, borderColor: COLORS.successLine },
+  enrollButtonDisabled: { opacity: 0.9 },
+  enrollButtonText: { color: COLORS.surface, fontSize: 13, fontWeight: '800' },
+  enrollButtonTextEnrolled: { color: COLORS.success }
 });
