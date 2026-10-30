@@ -275,12 +275,18 @@ export async function apiUpdateAcademicSettings(token, schoolYear, term) {
 
 export async function apiGetProgramChairData(token) {
   const headers = { Authorization: 'Bearer ' + token };
-  const [subjects, users, sections] = await Promise.all([
+  const [subjects, users, sections, assignments] = await Promise.all([
     request('/api/program-chair/subjects', { headers }),
     request('/api/program-chair/users', { headers }),
-    request('/api/program-chair/sections', { headers })
+    request('/api/program-chair/sections', { headers }),
+    request('/api/program-chair/assignments', { headers })
   ]);
-  return { subjects: subjects.subjects, users: users.users, sections: sections.sections };
+  return {
+    subjects: subjects.subjects,
+    users: users.users,
+    sections: sections.sections,
+    assignments: assignments.assignments
+  };
 }
 export async function apiGetProgramChairStudents(token) {
   const result = await request('/api/program-chair/students', {
@@ -551,6 +557,21 @@ export async function apiAssignSubject(token, facultyId, subjectId, sectionId) {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ facultyId, subjectId, sectionId })
+  });
+}
+
+export async function apiUpdateAssignment(token, assignmentId, facultyId) {
+  return request(`/api/program-chair/assignments/${assignmentId}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ facultyId })
+  });
+}
+
+export async function apiDeleteAssignment(token, assignmentId) {
+  return request(`/api/program-chair/assignments/${assignmentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
   });
 }
 

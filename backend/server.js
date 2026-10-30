@@ -12,6 +12,8 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const multer = require('multer');
 const { MongoClient, ObjectId } = require('mongodb');
 const bcrypt = require('bcryptjs');
@@ -23,6 +25,7 @@ const mongoUri = process.env.MONGODB_URI;
 const databaseName = process.env.MONGODB_DB_NAME || 'itproflms';
 const jwtSecret = process.env.JWT_SECRET || 'itproflms_jwt_secret_fallback_2026';
 const lessonUploadDirectory = path.join(__dirname, 'uploads', 'lessons');
+const execFileAsync = promisify(execFile);
 fs.mkdirSync(lessonUploadDirectory, { recursive: true });
 const lessonUpload = multer({
   storage: multer.diskStorage({
@@ -41,6 +44,54 @@ const lessonUpload = multer({
     callback(null, true);
   }
 });
+
+async function prepareLessonFile(filePath, fileName) {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension !== '.pptx') {
+    return { fileName, filePath };
+  }
+
+  const converterCandidates = [
+    process.env.PPTX_CONVERTER_PATH,
+    'soffice',
+    ...(process.platform === 'win32'
+      ? [
+        'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+        'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe'
+      ]
+      : ['/usr/bin/soffice', '/usr/local/bin/soffice'])
+  ].filter(Boolean);
+  const pdfFileName = `${path.basename(fileName, extension)}.pdf`;
+  const pdfFilePath = path.join(lessonUploadDirectory, pdfFileName);
+
+  try {
+    let lastError;
+    for (const converter of converterCandidates) {
+      try {
+        await execFileAsync(converter, [
+          '--headless',
+          '--convert-to', 'pdf',
+          '--outdir', lessonUploadDirectory,
+          filePath
+        ], { timeout: 120000 });
+        if (fs.existsSync(pdfFilePath)) break;
+        lastError = new Error('The converter did not produce a PDF file.');
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!fs.existsSync(pdfFilePath)) {
+      throw lastError || new Error('No LibreOffice converter was found.');
+    }
+    fs.unlinkSync(filePath);
+    return { fileName: pdfFileName, filePath: pdfFilePath };
+  } catch (error) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    throw new Error(
+      `Unable to convert PPTX to PDF. Install LibreOffice or set PPTX_CONVERTER_PATH to soffice.exe. ${error.message}`
+    );
+  }
+}
 
 if (!mongoUri) {
   throw new Error('MONGODB_URI is required in environment variables');
@@ -1135,6 +1186,70 @@ app.post('/api/program-chair/assignments', authenticateToken, requireProgramChai
   }
 });
 
+app.get('/api/program-chair/assignments', authenticateToken, requireProgramChair, async (req, res) => {
+  try {
+    const assignments = await assignmentsCollection.find({}).sort({ createdAt: -1 }).toArray();
+    const facultyIds = assignments.map((assignment) => assignment.facultyId);
+    const facultyUsers = await usersCollection.find({ _id: { $in: facultyIds } }, { projection: { password: 0 } }).toArray();
+    const facultyById = new Map(facultyUsers.map((faculty) => [faculty._id.toString(), faculty]));
+
+    return res.json({
+      assignments: assignments.map((assignment) => {
+        const faculty = facultyById.get(assignment.facultyId.toString());
+        return {
+          id: assignment._id.toString(),
+          subjectId: assignment.subjectId.toString(),
+          sectionId: assignment.sectionId.toString(),
+          facultyId: assignment.facultyId.toString(),
+          facultyName: faculty?.name || '',
+          facultyEmail: faculty?.email || ''
+        };
+      })
+    });
+  } catch (error) {
+    console.error('Error fetching program chair assignments:', error);
+    return res.status(500).json({ error: 'Failed to fetch faculty assignments.' });
+  }
+});
+
+app.patch('/api/program-chair/assignments/:assignmentId', authenticateToken, requireProgramChair, async (req, res) => {
+  try {
+    const { facultyId } = req.body;
+    if (!ObjectId.isValid(req.params.assignmentId) || !ObjectId.isValid(facultyId)) {
+      return res.status(400).json({ error: 'Valid assignment and faculty member are required.' });
+    }
+    const faculty = await usersCollection.findOne({
+      _id: new ObjectId(facultyId),
+      role: { $in: ['faculty', 'instructor', 'program_chair'] }
+    });
+    if (!faculty) return res.status(404).json({ error: 'Faculty member not found.' });
+
+    const result = await assignmentsCollection.findOneAndUpdate(
+      { _id: new ObjectId(req.params.assignmentId) },
+      { $set: { facultyId: new ObjectId(facultyId), updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+    if (!result) return res.status(404).json({ error: 'Faculty assignment not found.' });
+    return res.json({ assignment: { ...result, id: result._id.toString() } });
+  } catch (error) {
+    console.error('Error updating faculty assignment:', error);
+    if (error.code === 11000) return res.status(409).json({ error: 'This faculty assignment already exists.' });
+    return res.status(500).json({ error: 'Failed to update faculty assignment.' });
+  }
+});
+
+app.delete('/api/program-chair/assignments/:assignmentId', authenticateToken, requireProgramChair, async (req, res) => {
+  try {
+    if (!ObjectId.isValid(req.params.assignmentId)) return res.status(400).json({ error: 'Valid assignment is required.' });
+    const result = await assignmentsCollection.deleteOne({ _id: new ObjectId(req.params.assignmentId) });
+    if (!result.deletedCount) return res.status(404).json({ error: 'Faculty assignment not found.' });
+    return res.json({ message: 'Faculty assignment deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting faculty assignment:', error);
+    return res.status(500).json({ error: 'Failed to delete faculty assignment.' });
+  }
+});
+
 async function getTeachingAssignments(userId, role = 'faculty') {
   const assignments = await assignmentsCollection
     .find(role === 'program_chair' ? {} : { facultyId: new ObjectId(userId) })
@@ -1395,8 +1510,9 @@ app.post('/api/teaching/lessons/upload-base64', authenticateToken, requireTeachi
 
     const safeName = `${Date.now()}-${(fileName || 'lesson').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     const buffer = Buffer.from(base64, 'base64');
-    const finalPath = path.join(lessonUploadDirectory, safeName);
-    fs.writeFileSync(finalPath, buffer);
+    const uploadedPath = path.join(lessonUploadDirectory, safeName);
+    fs.writeFileSync(uploadedPath, buffer);
+    const preparedFile = await prepareLessonFile(uploadedPath, safeName);
 
     const now = new Date();
     const lesson = {
@@ -1404,7 +1520,7 @@ app.post('/api/teaching/lessons/upload-base64', authenticateToken, requireTeachi
       title: title.trim(),
       description: typeof description === 'string' ? description.trim() : '',
       type: 'file',
-      fileName: safeName,
+      fileName: preparedFile.fileName,
       slides: [],
       createdBy: new ObjectId(req.user.userId),
       createdAt: now,
@@ -1415,7 +1531,7 @@ app.post('/api/teaching/lessons/upload-base64', authenticateToken, requireTeachi
     return res.status(201).json({ lesson: serializeLesson({ ...lesson, _id: result.insertedId }) });
   } catch (error) {
     console.error('Error creating uploaded lesson from base64:', error);
-    return res.status(500).json({ error: 'Failed to save uploaded lesson.' });
+    return res.status(500).json({ error: error.message || 'Failed to save uploaded lesson.' });
   }
 });
 
@@ -1436,12 +1552,13 @@ app.post('/api/teaching/lessons/upload', authenticateToken, requireTeachingStaff
         return res.status(403).json({ error: 'You can only upload lessons for assigned subjects.' });
       }
       const now = new Date();
+      const preparedFile = await prepareLessonFile(req.file.path, req.file.filename);
       const lesson = {
         subjectId: new ObjectId(subjectId),
         title: title.trim(),
         description: typeof description === 'string' ? description.trim() : '',
         type: 'file',
-        fileName: req.file.filename,
+        fileName: preparedFile.fileName,
         slides: [],
         createdBy: new ObjectId(req.user.userId),
         createdAt: now,
@@ -1452,7 +1569,7 @@ app.post('/api/teaching/lessons/upload', authenticateToken, requireTeachingStaff
     } catch (error) {
       console.error('Error creating uploaded lesson:', error);
       if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      return res.status(500).json({ error: 'Failed to save uploaded lesson.' });
+      return res.status(500).json({ error: error.message || 'Failed to save uploaded lesson.' });
     }
   });
 });
@@ -1476,8 +1593,9 @@ app.patch('/api/teaching/lessons/:lessonId/upload-base64', authenticateToken, re
 
     const safeName = `${Date.now()}-${(fileName || 'lesson').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     const buffer = Buffer.from(base64, 'base64');
-    const finalPath = path.join(lessonUploadDirectory, safeName);
-    fs.writeFileSync(finalPath, buffer);
+    const uploadedPath = path.join(lessonUploadDirectory, safeName);
+    fs.writeFileSync(uploadedPath, buffer);
+    const preparedFile = await prepareLessonFile(uploadedPath, safeName);
 
     if (lesson.fileName) {
       const oldFilePath = path.join(lessonUploadDirectory, lesson.fileName);
@@ -1485,7 +1603,7 @@ app.patch('/api/teaching/lessons/:lessonId/upload-base64', authenticateToken, re
     }
 
     const updates = {
-      fileName: safeName,
+      fileName: preparedFile.fileName,
       type: 'file',
       slides: [],
       updatedAt: new Date()
@@ -1494,7 +1612,7 @@ app.patch('/api/teaching/lessons/:lessonId/upload-base64', authenticateToken, re
     return res.json({ lesson: serializeLesson({ ...lesson, ...updates }) });
   } catch (error) {
     console.error('Error replacing lesson file from base64:', error);
-    return res.status(500).json({ error: 'Failed to replace lesson file.' });
+    return res.status(500).json({ error: error.message || 'Failed to replace lesson file.' });
   }
 });
 
@@ -1554,8 +1672,9 @@ app.patch('/api/teaching/lessons/:lessonId/upload', authenticateToken, requireTe
         fs.unlinkSync(req.file.path);
         return res.status(403).json({ error: 'You can only edit lessons for assigned subjects.' });
       }
+      const preparedFile = await prepareLessonFile(req.file.path, req.file.filename);
       const updates = {
-        fileName: req.file.filename,
+        fileName: preparedFile.fileName,
         type: 'file',
         slides: [],
         updatedAt: new Date()
@@ -1569,7 +1688,7 @@ app.patch('/api/teaching/lessons/:lessonId/upload', authenticateToken, requireTe
     } catch (error) {
       console.error('Error replacing lesson file:', error);
       if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      return res.status(500).json({ error: 'Failed to replace lesson file.' });
+      return res.status(500).json({ error: error.message || 'Failed to replace lesson file.' });
     }
   });
 });

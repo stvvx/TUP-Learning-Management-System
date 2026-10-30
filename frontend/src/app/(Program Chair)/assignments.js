@@ -15,7 +15,9 @@ import AuthButton from '../../components/AuthButton';
 import StaffHeader from '../../components/StaffHeader';
 import {
   apiAssignSubject,
-  apiGetProgramChairData
+  apiGetProgramChairData,
+  apiUpdateAssignment,
+  apiDeleteAssignment
 } from '../../api/client';
 
 // TUP palette, same as the other screens. Consider moving this to a shared theme file.
@@ -222,6 +224,7 @@ export default function AssignmentsScreen() {
   const [subjects, setSubjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [sections, setSections] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedFaculty, setSelectedFaculty] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
@@ -248,6 +251,7 @@ export default function AssignmentsScreen() {
       setSubjects(data.subjects);
       setUsers(data.users);
       setSections(data.sections);
+      setAssignments(data.assignments);
     } catch (err) {
       setError(err.message || 'Failed to load assignment data.');
     }
@@ -268,8 +272,17 @@ export default function AssignmentsScreen() {
     setMessage('');
     setIsAssigning(true);
     try {
-      await apiAssignSubject(token, selectedFaculty, selectedSubject, selectedSection);
-      setMessage('Subject assigned to faculty successfully.');
+      const currentAssignment = assignments.find(
+        (assignment) => assignment.subjectId === selectedSubject && assignment.sectionId === selectedSection
+      );
+      if (currentAssignment) {
+        await apiUpdateAssignment(token, currentAssignment.id, selectedFaculty);
+        setMessage('Assigned faculty updated successfully.');
+      } else {
+        await apiAssignSubject(token, selectedFaculty, selectedSubject, selectedSection);
+        setMessage('Subject assigned to faculty successfully.');
+      }
+      await loadData();
     } catch (err) {
       setError(err.message || 'Failed to assign subject.');
     } finally {
@@ -283,13 +296,42 @@ export default function AssignmentsScreen() {
     setSelectedFaculty('');
   };
 
+  const deleteAssignment = async () => {
+    const assignment = assignments.find(
+      (item) => item.subjectId === selectedSubject && item.sectionId === selectedSection
+    );
+    if (!assignment) return;
+    setError('');
+    setMessage('');
+    try {
+      await apiDeleteAssignment(token, assignment.id);
+      setAssignments((current) => current.filter((item) => item.id !== assignment.id));
+      setSelectedFaculty('');
+      setMessage('Faculty assignment deleted successfully.');
+    } catch (err) {
+      setError(err.message || 'Failed to delete faculty assignment.');
+    }
+  };
+
   // Picking a subject narrows the section list to the same year level
   const pickSubject = (id) => {
     setSelectedSubject(id);
+    const assignment = assignments.find(
+      (item) => item.subjectId === id && item.sectionId === selectedSection
+    );
+    setSelectedFaculty(assignment?.facultyId || '');
     const subject = subjects.find((item) => idOf(item) === id);
     if (subject?.yearLevel && YEAR_LEVELS.includes(subject.yearLevel)) {
       setSectionYear(subject.yearLevel);
     }
+  };
+
+  const pickSection = (id) => {
+    setSelectedSection(id);
+    const assignment = assignments.find(
+      (item) => item.subjectId === selectedSubject && item.sectionId === id
+    );
+    setSelectedFaculty(assignment?.facultyId || '');
   };
 
   /* Table rows, organised by Year Level → Semester */
@@ -344,6 +386,9 @@ export default function AssignmentsScreen() {
   const subjectObj = subjects.find((s) => idOf(s) === selectedSubject);
   const sectionObj = sections.find((s) => idOf(s) === selectedSection);
   const facultyObj = faculty.find((m) => m.id === selectedFaculty);
+  const currentAssignment = assignments.find(
+    (assignment) => assignment.subjectId === selectedSubject && assignment.sectionId === selectedSection
+  );
   const selectedCount = [selectedSubject, selectedSection, selectedFaculty].filter(Boolean).length;
   const hasProgram = sections.some((section) => section.programName);
 
@@ -403,7 +448,7 @@ export default function AssignmentsScreen() {
         columns={sectionColumns}
         rows={sectionRows}
         selectedId={selectedSection}
-        onSelect={setSelectedSection}
+        onSelect={pickSection}
         emptyText={sections.length === 0 ? 'No sections found.' : 'No sections for this year level.'}
         maxHeight={sideTableHeight}
       />
@@ -490,11 +535,17 @@ export default function AssignmentsScreen() {
           </View>
           <View style={styles.actionWrap}>
             <AuthButton
-              title="Assign Subject"
+                title={currentAssignment ? 'Update Faculty Assignment' : 'Assign Subject'}
               onPress={assignFaculty}
               loading={isAssigning}
               disabled={!selectedSubject || !selectedFaculty || !selectedSection || isAssigning}
             />
+            {currentAssignment ? (
+              <TouchableOpacity style={styles.deleteAssignmentButton} onPress={deleteAssignment} activeOpacity={0.85}>
+                <Ionicons name="trash-outline" size={17} color={COLORS.danger} />
+                <Text style={styles.deleteAssignmentButtonText}>Delete faculty assignment</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       </View>
@@ -769,5 +820,19 @@ const styles = StyleSheet.create({
     padding: 18,
     marginTop: 4
   },
-  empty: { color: COLORS.muted, textAlign: 'center', fontSize: 13 }
+  empty: { color: COLORS.muted, textAlign: 'center', fontSize: 13 },
+  deleteAssignmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    alignSelf: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.dangerLine,
+    backgroundColor: COLORS.dangerSoft,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  deleteAssignmentButtonText: { color: COLORS.danger, fontSize: 12, fontWeight: '800' }
 });

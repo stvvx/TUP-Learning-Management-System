@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import * as DocumentPicker from 'expo-document-picker';
 import StudentHeader from '../../components/(Students)/StudentHeader';
 import StaffHeader from '../../components/StaffHeader';
@@ -598,10 +598,6 @@ function StudentLessonsScreen() {
 
 /* ───────────────────────── Lesson viewer ───────────────────────── */
 
-// Servers on private/local addresses can't be reached by Office Online's embed viewer.
-const isPrivateHost = (url) =>
-  /^https?:\/\/(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(url);
-
 // Full-screen lesson viewer (opens as a modal over the whole screen)
 function LessonViewer({ lesson, onClose }) {
   const insets = useSafeAreaInsets();
@@ -654,7 +650,7 @@ function LessonViewer({ lesson, onClose }) {
       } catch (err) {
         console.warn('Failed to load PDF for in-app preview:', err);
         if (isActive) {
-          setViewerError('This PDF could not be previewed here. Use "Open in new tab" instead.');
+          setViewerError('This PDF could not be previewed here.');
         }
       } finally {
         if (isActive) setIsLoadingPdf(false);
@@ -670,26 +666,6 @@ function LessonViewer({ lesson, onClose }) {
   }, [isWeb, lessonFileUrl, isPdf]);
 
   if (!lesson) return null;
-
-  const openFile = async () => {
-    if (!lessonFileUrl) return;
-    try {
-      if (isWeb) {
-        window.open(lessonFileUrl, '_blank', 'noopener');
-      } else {
-        // No canOpenURL check: it wrongly returns false for https on Android 11+
-        await Linking.openURL(lessonFileUrl);
-      }
-    } catch (err) {
-      console.warn('Failed to open lesson file:', err);
-      Alert.alert('Could not open file', 'This lesson file could not be opened on this device.');
-    }
-  };
-
-  const officeViewerUrl = lessonFileUrl
-    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(lessonFileUrl)}`
-    : '';
-  const canEmbedPptx = isWeb && !isPdf && lessonFileUrl && !isPrivateHost(lessonFileUrl);
 
   const safeIndex = Math.min(slideIndex, Math.max(slides.length - 1, 0));
   const currentSlide = slides[safeIndex];
@@ -716,17 +692,25 @@ function LessonViewer({ lesson, onClose }) {
       );
     }
 
-    if (canEmbedPptx) {
+    if (!isWeb && isPdf) {
       return (
-        <iframe
-          title={lesson.title}
-          src={officeViewerUrl}
-          style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#FFFFFF' }}
+        <WebView
+          source={{ uri: lessonFileUrl }}
+          style={styles.nativePdfViewer}
+          originWhitelist={['*']}
+          javaScriptEnabled={false}
+          startInLoadingState
+          renderLoading={() => (
+            <View style={styles.fsCenter}>
+              <ActivityIndicator size="large" color={COLORS.gold} />
+              <Text style={styles.fsCenterTextLight}>Loading PDF...</Text>
+            </View>
+          )}
         />
       );
     }
 
-    // Native, PPTX on a private server, or a PDF that failed to preview
+    // Legacy PPTX files or a PDF that failed to preview
     return (
       <View style={styles.fsCenter}>
         <View style={styles.fsFileCard}>
@@ -742,19 +726,9 @@ function LessonViewer({ lesson, onClose }) {
             {viewerError
               ? viewerError
               : isWeb && !isPdf
-                ? 'PowerPoint files can only be previewed when the server is publicly reachable. Open the file to view it.'
-                : `This lesson is an uploaded ${isPdf ? 'PDF' : 'PPTX'} file. Open it to view on your device.`}
+                ? 'This PowerPoint lesson must be uploaded again so it can be converted for in-app viewing.'
+                : `This lesson is an uploaded ${isPdf ? 'PDF' : 'PPTX'} file and could not be previewed.`}
           </Text>
-          <TouchableOpacity style={styles.downloadButton} onPress={openFile} activeOpacity={0.85}>
-            <Ionicons
-              name={isWeb ? 'open-outline' : 'download-outline'}
-              size={18}
-              color={COLORS.surface}
-            />
-            <Text style={styles.downloadButtonText}>
-              {isWeb ? 'Open in new tab' : 'Open / download lesson'}
-            </Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
@@ -846,21 +820,6 @@ function LessonViewer({ lesson, onClose }) {
               {lesson.type === 'file' ? lesson.fileName : `${slides.length} lesson slide(s)`}
             </Text>
           </View>
-          {isFileLesson ? (
-            <TouchableOpacity
-              onPress={openFile}
-              style={styles.fsIconBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel={isWeb ? 'Open in new tab' : 'Download lesson'}
-            >
-              <Ionicons
-                name={isWeb ? 'open-outline' : 'download-outline'}
-                size={20}
-                color={COLORS.surface}
-              />
-            </TouchableOpacity>
-          ) : null}
         </View>
 
         {lesson.description && !isFileLesson ? (
@@ -1172,21 +1131,6 @@ const styles = StyleSheet.create({
   },
   fileViewerText: { color: COLORS.brandDeep, fontSize: 13, lineHeight: 19, marginBottom: 8 },
   viewerErrorText: { color: COLORS.danger, fontSize: 12, fontWeight: '600', marginBottom: 8 },
-  downloadButton: {
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: COLORS.brand,
-    borderWidth: 2,
-    borderColor: COLORS.ink,
-    borderBottomWidth: 4,
-    borderRadius: 999,
-    paddingVertical: 12,
-    paddingHorizontal: 16
-  },
-  downloadButtonText: { color: COLORS.surface, fontWeight: '800', fontSize: 14 },
   webEmbedContainer: {
     height: 360,
     marginTop: 8,
@@ -1222,15 +1166,6 @@ const styles = StyleSheet.create({
   fsHeaderText: { flex: 1 },
   fsTitle: { fontSize: 17, fontWeight: '900', color: COLORS.surface },
   fsSub: { fontSize: 12, color: COLORS.brandLine, marginTop: 1 },
-  fsIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 2,
-    borderColor: COLORS.brandLine,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
   fsDescription: {
     backgroundColor: COLORS.goldSoft,
     color: COLORS.brandDeep,
@@ -1240,6 +1175,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   fsBody: { flex: 1 },
+  nativePdfViewer: { flex: 1, backgroundColor: '#2B2325' },
   fsCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
   fsCenterTextLight: { color: COLORS.brandLine, fontSize: 13, fontWeight: '600' },
   fsCenterTextDark: { color: COLORS.muted, fontSize: 14, textAlign: 'center' },
