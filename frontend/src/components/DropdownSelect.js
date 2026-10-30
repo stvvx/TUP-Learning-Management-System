@@ -31,11 +31,38 @@ export default function DropdownSelect({
   value,
   onSelect,
   error,
-  containerStyle
+  containerStyle,
+  multiSelect = false
 }) {
   const [modalVisible, setModalVisible] = useState(false);
 
+  const selectedValues = Array.isArray(value) ? value : value == null ? [] : [value];
   const selectedOption = options.find((o) => o.value === value);
+  const selectedLabels = options.filter((option) => selectedValues.includes(option.value)).map((option) => option.label);
+
+  const displayText = multiSelect
+    ? selectedLabels.length
+      ? selectedLabels.length > 2
+        ? `${selectedLabels.length} selected`
+        : selectedLabels.join(', ')
+      : placeholder
+    : selectedOption
+      ? selectedOption.label
+      : placeholder;
+
+  const handleItemPress = (itemValue) => {
+    if (!multiSelect) {
+      onSelect(itemValue);
+      setModalVisible(false);
+      return;
+    }
+
+    const nextValues = selectedValues.includes(itemValue)
+      ? selectedValues.filter((selectedValue) => selectedValue !== itemValue)
+      : [...selectedValues, itemValue];
+
+    onSelect(nextValues);
+  };
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -60,10 +87,10 @@ export default function DropdownSelect({
         )}
 
         <Text
-          style={[styles.valueText, !selectedOption && styles.placeholderText]}
-          numberOfLines={1}
+          style={[styles.valueText, !selectedOption && !selectedLabels.length && styles.placeholderText]}
+          numberOfLines={2}
         >
-          {selectedOption ? selectedOption.label : placeholder}
+          {displayText}
         </Text>
 
         <Ionicons
@@ -88,31 +115,40 @@ export default function DropdownSelect({
           onPress={() => setModalVisible(false)}
         >
           <View style={styles.sheet}>
-            {/* Handle bar */}
             <View style={styles.handleBar} />
 
             {label && <Text style={styles.sheetTitle}>{label}</Text>}
 
+            {multiSelect ? (
+              <View style={styles.toolbarRow}>
+                <Text style={styles.selectionSummary}>{selectedLabels.length} selected</Text>
+                <TouchableOpacity
+                  style={styles.doneButton}
+                  onPress={() => setModalVisible(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.doneButtonText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             <FlatList
               data={options}
-              keyExtractor={(item) => item.value}
+              keyExtractor={(item) => String(item.value)}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => {
-                const isSelected = item.value === value;
+                const isSelected = multiSelect ? selectedValues.includes(item.value) : item.value === value;
                 return (
                   <TouchableOpacity
                     style={[styles.option, isSelected && styles.optionSelected]}
                     activeOpacity={0.7}
-                    onPress={() => {
-                      onSelect(item.value);
-                      setModalVisible(false);
-                    }}
+                    onPress={() => handleItemPress(item.value)}
                   >
                     <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
                       {item.label}
                     </Text>
                     {isSelected && (
-                      <Ionicons name="checkmark" size={18} color="#2563EB" />
+                      <Ionicons name={multiSelect ? 'checkmark-circle' : 'checkmark'} size={18} color="#2563EB" />
                     )}
                   </TouchableOpacity>
                 );
@@ -209,6 +245,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
     marginBottom: 12
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 12
+  },
+  selectionSummary: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600'
+  },
+  doneButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  doneButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700'
   },
   option: {
     flexDirection: 'row',

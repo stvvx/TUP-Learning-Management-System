@@ -167,7 +167,7 @@ function TeachingExamsScreen() {
   const [activeTab, setActiveTab] = useState('list');
 
   // create-form state
-  const [subjectId, setSubjectId] = useState('');
+  const [subjectSelections, setSubjectSelections] = useState([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [questions, setQuestions] = useState(createQuestions);
@@ -181,6 +181,13 @@ function TeachingExamsScreen() {
   const [quizScores, setQuizScores] = useState([]);
   const [scoresError, setScoresError] = useState('');
 
+  const buildSubjectSelectionValue = (subject) => `${subject.id}::${subject.sectionId || subject.sectionName || 'section'}`;
+  const parseSubjectSelectionValue = (value) => {
+    if (!value) return '';
+    const [subjectId] = String(value).split('::');
+    return subjectId || '';
+  };
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -190,7 +197,7 @@ function TeachingExamsScreen() {
       ]);
       setSubjects(assignedSubjects);
       setQuizzes(teachingQuizzes);
-      setSubjectId((current) => current || assignedSubjects[0]?.id || '');
+      setSubjectSelections([]);
     } catch (err) {
       setLoadError(err.message || 'Failed to load quiz data.');
     }
@@ -238,11 +245,15 @@ function TeachingExamsScreen() {
   };
 
   // ── save quiz ─────────────────────────────────────────────────────────────
+  const selectedSubjectIds = subjectSelections
+    .map((value) => parseSubjectSelectionValue(value))
+    .filter(Boolean);
+
   const saveQuiz = async () => {
     setFormError('');
     setFormMessage('');
-    if (!subjectId || !title.trim()) {
-      setFormError('Select an assigned subject and enter a quiz title.');
+    if (selectedSubjectIds.length === 0 || !title.trim()) {
+      setFormError('Select at least one assigned subject and enter a quiz title.');
       return;
     }
     if (questions.length < 10 || questions.length > 20) {
@@ -260,14 +271,27 @@ function TeachingExamsScreen() {
     }
     setIsSaving(true);
     try {
-      const quiz = await apiCreateQuiz(token, {
-        subjectId, title, description, questions
-      });
-      setQuizzes((current) => [quiz, ...current]);
+      const createdQuizzes = [];
+      for (const subjectId of selectedSubjectIds) {
+        const quiz = await apiCreateQuiz(token, {
+          subjectId,
+          title,
+          description,
+          questions
+        });
+        createdQuizzes.push(quiz);
+      }
+
+      setQuizzes((current) => [...createdQuizzes, ...current]);
       setTitle('');
       setDescription('');
       setQuestions(createQuestions());
-      setFormMessage('Quiz created successfully.');
+      setSubjectSelections([]);
+      setFormMessage(
+        createdQuizzes.length > 1
+          ? `Created ${createdQuizzes.length} quizzes successfully.`
+          : 'Quiz created successfully.'
+      );
       setActiveTab('list');
     } catch (err) {
       setFormError(err.message || 'Failed to create quiz.');
@@ -292,7 +316,7 @@ function TeachingExamsScreen() {
 
   const subjectOptions = subjects.map((s) => ({
     label: `${s.code} - ${s.sectionName}`,
-    value: s.id
+    value: buildSubjectSelectionValue(s)
   }));
 
   return (
@@ -456,10 +480,11 @@ function TeachingExamsScreen() {
               <DropdownSelect
                 label="Assigned subject"
                 icon="library-outline"
-                placeholder="Select a subject"
+                placeholder="Select one or more subjects"
                 options={subjectOptions}
-                value={subjectId}
-                onSelect={setSubjectId}
+                value={subjectSelections}
+                onSelect={setSubjectSelections}
+                multiSelect
               />
               <AuthInput
                 label="Quiz title"
