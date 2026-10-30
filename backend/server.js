@@ -98,6 +98,7 @@ let programChairsCollection;
 let programsCollection;
 let coursesCollection;
 let sectionsCollection;
+let academicSettingsCollection;
 
 // Authentication Middleware for protected routes
 function authenticateToken(req, res, next) {
@@ -799,6 +800,7 @@ app.get('/api/program-chair/students', authenticateToken, requireProgramChair, a
           name: student.name,
           email: student.email,
           yearLevel: profile?.yearLevel || null,
+          term: profile?.term || null,
           sectionId: profile?.sectionId?.toString() || null
         };
       })
@@ -822,11 +824,12 @@ app.get('/api/program-chair/sections', authenticateToken, requireProgramChair, a
 // Program chair academic management (sections)
 app.get('/api/program-chair/academic', authenticateToken, requireProgramChair, async (req, res) => {
   try {
-    const [programs, sections] = await Promise.all([
+    const [programs, sections, settings] = await Promise.all([
       programsCollection.find({}).sort({ name: 1 }).toArray(),
-      sectionsCollection.find({}).sort({ name: 1 }).toArray()
+      sectionsCollection.find({}).sort({ name: 1 }).toArray(),
+      academicSettingsCollection.findOne({ _id: 'current' })
     ]);
-    return res.json({ programs, sections });
+    return res.json({ programs, sections, settings: settings || null });
   } catch (error) {
     console.error('Error fetching program chair academic data:', error);
     return res.status(500).json({ error: 'Failed to fetch academic data.' });
@@ -942,12 +945,17 @@ app.post('/api/program-chair/subjects', authenticateToken, requireProgramChair, 
     if (!term || typeof term !== 'string' || !VALID_TERMS.includes(term.trim())) {
       return res.status(400).json({ error: `Semester must be one of: ${VALID_TERMS.join(', ')}.` });
     }
+    const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
+    if (!academicSettings?.schoolYear) {
+      return res.status(409).json({ error: 'Academic school year is not configured.' });
+    }
 
     const subject = {
       code: normalizedCode,
       description: description.trim(),
       yearLevel: yearLevel.trim(),
       term: term.trim(),
+      schoolYear: academicSettings.schoolYear,
       createdBy: req.user.userId,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -971,9 +979,13 @@ app.patch('/api/program-chair/subjects/:subjectId', authenticateToken, requirePr
       !description?.trim() || !VALID_YEAR_LEVELS.includes(yearLevel) || !VALID_TERMS.includes(term)) {
       return res.status(400).json({ error: 'Valid subject code, description, year level, and semester are required.' });
     }
+    const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
+    if (!academicSettings?.schoolYear) {
+      return res.status(409).json({ error: 'Academic school year is not configured.' });
+    }
     const result = await subjectsCollection.findOneAndUpdate(
       { _id: new ObjectId(req.params.subjectId) },
-      { $set: { code: normalizedCode, description: description.trim(), yearLevel, term, updatedAt: new Date() } },
+      { $set: { code: normalizedCode, description: description.trim(), yearLevel, term, schoolYear: academicSettings.schoolYear, updatedAt: new Date() } },
       { returnDocument: 'after' }
     );
     if (!result) return res.status(404).json({ error: 'Subject not found.' });
@@ -1011,9 +1023,10 @@ app.get('/api/student/subjects', authenticateToken, requireStudent, async (req, 
       return res.json({ yearLevel: null, subjects: [], terms: [] });
     }
 
+    const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
     const [subjects, enrollments] = await Promise.all([
       subjectsCollection
-        .find({ yearLevel: studentProfile.yearLevel })
+        .find({ yearLevel: studentProfile.yearLevel, schoolYear: academicSettings?.schoolYear })
         .sort({ term: 1, code: 1 })
         .toArray(),
       enrollmentsCollection
@@ -1049,15 +1062,19 @@ app.post('/api/student/enrollments', authenticateToken, requireStudent, async (r
     }
 
     const studentId = new ObjectId(req.user.userId);
-    const [studentProfile, subject] = await Promise.all([
+    const [studentProfile, subject, academicSettings] = await Promise.all([
       studentsCollection.findOne({ userId: studentId }),
-      subjectsCollection.findOne({ _id: new ObjectId(subjectId) })
+      subjectsCollection.findOne({ _id: new ObjectId(subjectId) }),
+      academicSettingsCollection.findOne({ _id: 'current' })
     ]);
     if (!studentProfile?.yearLevel) {
       return res.status(400).json({ error: 'Your year level must be assigned before enrollment.' });
     }
     if (!subject) {
       return res.status(404).json({ error: 'Subject not found.' });
+    }
+    if (!academicSettings?.schoolYear || subject.schoolYear !== academicSettings.schoolYear) {
+      return res.status(400).json({ error: 'This subject is not available for the current school year.' });
     }
     if (subject.yearLevel !== studentProfile.yearLevel) {
       return res.status(400).json({ error: 'You can only enroll in subjects for your year level.' });
@@ -1069,6 +1086,7 @@ app.post('/api/student/enrollments', authenticateToken, requireStudent, async (r
     const enrollment = {
       studentId,
       subjectId: new ObjectId(subjectId),
+      schoolYear: academicSettings.schoolYear,
       enrolledBy: req.user.userId,
       enrolledByRole: 'student',
       createdAt: new Date()
@@ -1889,6 +1907,77 @@ app.patch('/api/admin/users/:userId/role', authenticateToken, requireSuperAdmin,
   }
 });
 
+app.patch('/api/admin/users/:userId', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    if (!ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID.' });
+    }
+    const firstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim() : '';
+    const middleName = typeof req.body.middleName === 'string' ? req.body.middleName.trim() : '';
+    const lastName = typeof req.body.lastName === 'string' ? req.body.lastName.trim() : '';
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    if (!firstName || !lastName || !isValidEmail(email)) {
+      return res.status(400).json({ error: 'First name, last name, and a valid TUP email are required.' });
+    }
+    const userId = new ObjectId(req.params.userId);
+    const result = await usersCollection.findOneAndUpdate(
+      { _id: userId },
+      {
+        $set: {
+          firstName,
+          middleName,
+          lastName,
+          name: [firstName, middleName, lastName].filter(Boolean).join(' '),
+          email,
+          updatedAt: new Date()
+        }
+      },
+      { returnDocument: 'after', projection: { password: 0 } }
+    );
+    if (!result) return res.status(404).json({ error: 'User not found.' });
+    return res.json({
+      message: 'User updated successfully.',
+      user: {
+        id: result._id.toString(),
+        ...getUserNameFields(result),
+        name: result.name,
+        email: result.email,
+        role: result.role || 'student',
+        createdAt: result.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return res.status(error.code === 11000 ? 409 : 500).json({
+      error: error.code === 11000 ? 'That email address is already in use.' : 'Failed to update user.'
+    });
+  }
+});
+
+app.delete('/api/admin/users/:userId', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    if (!ObjectId.isValid(req.params.userId)) return res.status(400).json({ error: 'Invalid user ID.' });
+    if (req.params.userId === req.user.userId) {
+      return res.status(400).json({ error: 'You cannot delete your own account.' });
+    }
+    const userId = new ObjectId(req.params.userId);
+    const result = await usersCollection.deleteOne({ _id: userId });
+    if (!result.deletedCount) return res.status(404).json({ error: 'User not found.' });
+    await Promise.all([
+      studentsCollection.deleteOne({ userId }),
+      facultyCollection.deleteOne({ userId }),
+      programChairsCollection.deleteOne({ userId }),
+      enrollmentsCollection.deleteMany({ studentId: userId }),
+      assignmentsCollection.deleteMany({ facultyId: userId }),
+      chatMessagesCollection.deleteMany({ $or: [{ senderId: userId }, { recipientId: userId }] })
+    ]);
+    return res.json({ message: 'User deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return res.status(500).json({ error: 'Failed to delete user.' });
+  }
+});
+
 app.patch('/api/admin/students/:userId/placement', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
     const { yearLevel, sectionId } = req.body;
@@ -1912,9 +2001,9 @@ app.patch('/api/admin/students/:userId/placement', authenticateToken, requireSup
 
 app.patch('/api/program-chair/students/:userId/placement', authenticateToken, requireProgramChair, async (req, res) => {
   try {
-    const { yearLevel, sectionId } = req.body;
-    if (!VALID_YEAR_LEVELS.includes(yearLevel) || !ObjectId.isValid(sectionId)) {
-      return res.status(400).json({ error: 'Valid year level and section are required.' });
+    const { yearLevel, term, sectionId } = req.body;
+    if (!VALID_YEAR_LEVELS.includes(yearLevel) || !VALID_TERMS.includes(term) || !ObjectId.isValid(sectionId)) {
+      return res.status(400).json({ error: 'Valid year level, term, and section are required.' });
     }
     const [section, student] = await Promise.all([
       sectionsCollection.findOne({ _id: new ObjectId(sectionId), yearLevel }),
@@ -1923,7 +2012,7 @@ app.patch('/api/program-chair/students/:userId/placement', authenticateToken, re
     if (!section || !student) return res.status(404).json({ error: 'Student or matching section not found.' });
     await studentsCollection.updateOne(
       { userId: student._id },
-      { $set: { yearLevel, sectionId: new ObjectId(sectionId), updatedAt: new Date() } },
+      { $set: { yearLevel, term, sectionId: new ObjectId(sectionId), updatedAt: new Date() } },
       { upsert: true }
     );
     return res.json({ message: 'Student placement updated successfully.' });
@@ -1935,14 +2024,55 @@ app.patch('/api/program-chair/students/:userId/placement', authenticateToken, re
 
 app.get('/api/admin/academic', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
-    const [programs, sections] = await Promise.all([
+    const [programs, sections, settings] = await Promise.all([
       programsCollection.find({}).sort({ name: 1 }).toArray(),
-      sectionsCollection.find({}).sort({ name: 1 }).toArray()
+      sectionsCollection.find({}).sort({ name: 1 }).toArray(),
+      academicSettingsCollection.findOne({ _id: 'current' })
     ]);
-    return res.json({ programs, sections });
+    return res.json({ programs, sections, settings: settings || null });
   } catch (error) {
     console.error('Error fetching academic structure:', error);
     return res.status(500).json({ error: 'Failed to fetch academic structure.' });
+  }
+});
+
+app.patch('/api/admin/academic/settings', authenticateToken, requireSuperAdmin, async (req, res) => {
+  const schoolYear = typeof req.body.schoolYear === 'string' ? req.body.schoolYear.trim() : '';
+  const term = typeof req.body.term === 'string' ? req.body.term.trim() : '';
+  if (!/^\d{4}-\d{4}$/.test(schoolYear) || !VALID_TERMS.includes(term)) {
+    return res.status(400).json({ error: 'School year must use YYYY-YYYY format and term must be valid.' });
+  }
+  const [startYear, endYear] = schoolYear.split('-').map(Number);
+  if (endYear !== startYear + 1) {
+    return res.status(400).json({ error: 'School year must contain consecutive years.' });
+  }
+  try {
+    const activeSubjects = await subjectsCollection
+      .find({ term, schoolYear })
+      .project({ _id: 1 })
+      .toArray();
+    const activeSubjectIds = activeSubjects.map((subject) => subject._id);
+    const enrollmentCleanup = await enrollmentsCollection.deleteMany({
+      $or: [
+        { schoolYear: { $ne: schoolYear } },
+        { subjectId: { $nin: activeSubjectIds } }
+      ]
+    });
+    const settings = {
+      _id: 'current',
+      schoolYear,
+      term,
+      updatedAt: new Date(),
+      updatedBy: req.user.userId
+    };
+    await academicSettingsCollection.replaceOne({ _id: 'current' }, settings, { upsert: true });
+    return res.json({
+      settings,
+      removedEnrollments: enrollmentCleanup.deletedCount
+    });
+  } catch (error) {
+    console.error('Error updating academic settings:', error);
+    return res.status(500).json({ error: 'Failed to update academic settings.' });
   }
 });
 
@@ -1955,6 +2085,48 @@ app.post('/api/admin/academic/programs', authenticateToken, requireSuperAdmin, a
   } catch (error) {
     console.error('Error creating program:', error);
     return res.status(error.code === 11000 ? 409 : 500).json({ error: 'Failed to create program.' });
+  }
+});
+
+app.patch('/api/admin/academic/programs/:programId', authenticateToken, requireSuperAdmin, async (req, res) => {
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  if (!ObjectId.isValid(req.params.programId) || !name) {
+    return res.status(400).json({ error: 'A valid program and name are required.' });
+  }
+  try {
+    const result = await programsCollection.findOneAndUpdate(
+      { _id: new ObjectId(req.params.programId) },
+      { $set: { name, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+    if (!result) return res.status(404).json({ error: 'Program not found.' });
+    await sectionsCollection.updateMany(
+      { programId: result._id },
+      { $set: { programName: name, updatedAt: new Date() } }
+    );
+    return res.json({ program: { id: result._id.toString(), name: result.name } });
+  } catch (error) {
+    console.error('Error updating program:', error);
+    return res.status(error.code === 11000 ? 409 : 500).json({ error: error.code === 11000 ? 'A program with this name already exists.' : 'Failed to update program.' });
+  }
+});
+
+app.delete('/api/admin/academic/programs/:programId', authenticateToken, requireSuperAdmin, async (req, res) => {
+  if (!ObjectId.isValid(req.params.programId)) {
+    return res.status(400).json({ error: 'A valid program is required.' });
+  }
+  try {
+    const programId = new ObjectId(req.params.programId);
+    const sectionCount = await sectionsCollection.countDocuments({ programId });
+    if (sectionCount) {
+      return res.status(409).json({ error: 'Delete or move this program’s sections before deleting the program.' });
+    }
+    const result = await programsCollection.deleteOne({ _id: programId });
+    if (!result.deletedCount) return res.status(404).json({ error: 'Program not found.' });
+    return res.json({ message: 'Program deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting program:', error);
+    return res.status(500).json({ error: 'Failed to delete program.' });
   }
 });
 
@@ -1987,9 +2159,60 @@ app.post('/api/admin/academic/sections', authenticateToken, requireSuperAdmin, a
         programName: prog.name
       }
     });
+
   } catch (error) {
     console.error('Error creating section:', error);
     return res.status(error.code === 11000 ? 409 : 500).json({ error: 'Failed to create section.' });
+  }
+});
+
+app.patch('/api/admin/academic/sections/:sectionId', authenticateToken, requireSuperAdmin, async (req, res) => {
+  const { name, yearLevel, programId, courseId } = req.body;
+  const targetProgramId = programId || courseId;
+  if (!ObjectId.isValid(req.params.sectionId) || !name?.trim() || !VALID_YEAR_LEVELS.includes(yearLevel) || !ObjectId.isValid(targetProgramId)) {
+    return res.status(400).json({ error: 'Valid section name, year level, and program are required.' });
+  }
+  try {
+    const program = await programsCollection.findOne({ _id: new ObjectId(targetProgramId) });
+    if (!program) return res.status(404).json({ error: 'Program not found.' });
+    const result = await sectionsCollection.findOneAndUpdate(
+      { _id: new ObjectId(req.params.sectionId) },
+      {
+        $set: {
+          name: name.trim(),
+          yearLevel,
+          programId: new ObjectId(targetProgramId),
+          courseId: new ObjectId(targetProgramId),
+          programName: program.name,
+          updatedAt: new Date()
+        }
+      },
+      { returnDocument: 'after' }
+    );
+    if (!result) return res.status(404).json({ error: 'Section not found.' });
+    return res.json({ section: { ...result, id: result._id.toString() } });
+  } catch (error) {
+    console.error('Error updating section:', error);
+    return res.status(error.code === 11000 ? 409 : 500).json({ error: error.code === 11000 ? 'A section with these details already exists.' : 'Failed to update section.' });
+  }
+});
+
+app.delete('/api/admin/academic/sections/:sectionId', authenticateToken, requireSuperAdmin, async (req, res) => {
+  if (!ObjectId.isValid(req.params.sectionId)) {
+    return res.status(400).json({ error: 'A valid section is required.' });
+  }
+  try {
+    const sectionId = new ObjectId(req.params.sectionId);
+    const result = await sectionsCollection.deleteOne({ _id: sectionId });
+    if (!result.deletedCount) return res.status(404).json({ error: 'Section not found.' });
+    await Promise.all([
+      studentsCollection.updateMany({ sectionId }, { $set: { sectionId: null, updatedAt: new Date() } }),
+      assignmentsCollection.deleteMany({ sectionId })
+    ]);
+    return res.json({ message: 'Section deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting section:', error);
+    return res.status(500).json({ error: 'Failed to delete section.' });
   }
 });
 
@@ -2017,6 +2240,7 @@ async function start() {
   programsCollection = database.collection('programs');
   coursesCollection = database.collection('courses');
   sectionsCollection = database.collection('sections');
+  academicSettingsCollection = database.collection('academicSettings');
 
   // Create unique index on email
   await usersCollection.createIndex({ email: 1 }, { unique: true });
@@ -2040,6 +2264,17 @@ async function start() {
   await programsCollection.createIndex({ name: 1 }, { unique: true });
   await coursesCollection.createIndex({ name: 1, programId: 1 }, { unique: true });
   await sectionsCollection.createIndex({ name: 1, courseId: 1, yearLevel: 1 }, { unique: true });
+  const defaultSchoolYear = `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+  await academicSettingsCollection.updateOne(
+    { _id: 'current' },
+    { $setOnInsert: { _id: 'current', schoolYear: defaultSchoolYear, term: VALID_TERMS[0], updatedAt: new Date() } },
+    { upsert: true }
+  );
+  const currentSettings = await academicSettingsCollection.findOne({ _id: 'current' });
+  await subjectsCollection.updateMany(
+    { schoolYear: { $exists: false } },
+    { $set: { schoolYear: currentSettings.schoolYear, updatedAt: new Date() } }
+  );
   await database.command({ ping: 1 });
 
   app.listen(port, '0.0.0.0', () => {

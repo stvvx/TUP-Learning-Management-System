@@ -240,12 +240,37 @@ export async function apiUpdateUserRole(token, userId, role) {
   return result.user;
 }
 
+export async function apiUpdateUser(token, userId, user) {
+  const result = await request(`/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify(user)
+  });
+  return result.user;
+}
+
+export async function apiDeleteUser(token, userId) {
+  return request(`/api/admin/users/${userId}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
+  });
+}
+
 export async function apiUpdateStudentPlacement(token, userId, yearLevel, sectionId) {
   return request(`/api/admin/students/${userId}/placement`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ yearLevel, sectionId })
   });
+}
+
+export async function apiUpdateAcademicSettings(token, schoolYear, term) {
+  const result = await request('/api/admin/academic/settings', {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ schoolYear, term })
+  });
+  return result.settings;
 }
 
 export async function apiGetProgramChairData(token) {
@@ -264,11 +289,11 @@ export async function apiGetProgramChairStudents(token) {
   return result.students;
 }
 
-export async function apiUpdateProgramChairStudentPlacement(token, userId, yearLevel, sectionId) {
+export async function apiUpdateProgramChairStudentPlacement(token, userId, yearLevel, term, sectionId) {
   return request(`/api/program-chair/students/${userId}/placement`, {
     method: 'PATCH',
     headers: { Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ yearLevel, sectionId })
+    body: JSON.stringify({ yearLevel, term, sectionId })
   });
 }
 
@@ -550,6 +575,22 @@ export async function apiCreateProgram(token, name) {
   return result.program;
 }
 
+export async function apiUpdateProgram(token, programId, name) {
+  const result = await request(`/api/admin/academic/programs/${programId}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ name })
+  });
+  return result.program;
+}
+
+export async function apiDeleteProgram(token, programId) {
+  return request(`/api/admin/academic/programs/${programId}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
+  });
+}
+
 export async function apiCreateSection(token, name, yearLevel, programId) {
   const result = await request('/api/admin/academic/sections', {
     method: 'POST',
@@ -557,6 +598,22 @@ export async function apiCreateSection(token, name, yearLevel, programId) {
     body: JSON.stringify({ name, yearLevel, programId })
   });
   return result.section;
+}
+
+export async function apiUpdateAdminSection(token, sectionId, section) {
+  const result = await request(`/api/admin/academic/sections/${sectionId}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify(section)
+  });
+  return result.section;
+}
+
+export async function apiDeleteAdminSection(token, sectionId) {
+  return request(`/api/admin/academic/sections/${sectionId}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
+  });
 }
 
 /** Program chair Ã¢â‚¬â€ fetch programs and sections they manage */

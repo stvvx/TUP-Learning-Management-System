@@ -77,9 +77,9 @@ export async function apiGetProgramChairStudents(token) {
   return Array.isArray(result?.students) ? result.students : [];
 }
 
-export async function apiUpdateProgramChairStudentPlacement(token, userId, yearLevel, sectionId) {
+export async function apiUpdateProgramChairStudentPlacement(token, userId, yearLevel, term, sectionId) {
   return request(token, `/api/program-chair/students/${userId}/placement`, {
     method: 'PATCH',
-    body: JSON.stringify({ yearLevel, sectionId })
+    body: JSON.stringify({ yearLevel, term, sectionId })
   });
 }

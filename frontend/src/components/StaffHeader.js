@@ -3,6 +3,14 @@ import { ScrollView, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+// TUP palette, same as StudentHeader and the other screens.
+const COLORS = {
+  brand: '#7B1113',
+  gold: '#F2B705',
+  surface: '#FFFFFF',
+  ink: '#1F1416'
+};
+
 const ITEMS = {
   superadmin: [
     { label: 'Home', icon: 'home-outline', route: '/dashboard' },
@@ -49,12 +57,13 @@ export default function StaffHeader({ role, activeRoute }) {
             accessibilityRole="button"
             accessibilityState={{ selected: isActive }}
             onPress={() => router.push(item.route)}
+            activeOpacity={0.8}
             style={[styles.item, isActive && styles.itemActive]}
           >
             <Ionicons
               name={item.icon}
               size={18}
-              color={isActive ? '#2563EB' : '#64748B'}
+              color={isActive ? COLORS.gold : COLORS.ink}
             />
             <Text style={[styles.text, isActive && styles.textActive]}>{item.label}</Text>
           </TouchableOpacity>
@@ -65,22 +74,30 @@ export default function StaffHeader({ role, activeRoute }) {
 }
 
 const styles = StyleSheet.create({
-  scroll: { marginBottom: 20 },
-  container: { gap: 10 },
+  scroll: {
+    marginBottom: 20,
+    // room so the thick bottom border isn't clipped
+    paddingBottom: 2
+  },
+  container: { gap: 10, paddingRight: 4 },
   item: {
-    minWidth: 86,
+    minWidth: 92,
     height: 42,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.ink,
+    borderBottomWidth: 4
   },
-  itemActive: { backgroundColor: '#EFF6FF', borderColor: '#93C5FD' },
-  text: { fontSize: 12, fontWeight: '600', color: '#64748B' },
-  textActive: { color: '#1D4ED8', fontWeight: '700' }
+  itemActive: {
+    backgroundColor: COLORS.brand,
+    borderColor: COLORS.ink
+  },
+  text: { fontSize: 12, fontWeight: '700', color: COLORS.ink },
+  textActive: { color: COLORS.surface, fontWeight: '800' }
 });

@@ -40,6 +40,11 @@ const YEAR_LEVEL_OPTIONS = [
   { label: 'Third Year', value: 'Third Year' },
   { label: 'Fourth Year', value: 'Fourth Year' }
 ];
+const TERM_OPTIONS = [
+  { label: 'First Term', value: 'First Term' },
+  { label: 'Second Term', value: 'Second Term' },
+  { label: 'Third Term', value: 'Third Term' }
+];
 
 const sectionKey = (section) => section.id || section._id;
 
@@ -108,6 +113,7 @@ function StudentRow({
   isWide,
   onToggle,
   onChangeYear,
+  onChangeTerm,
   onChangeSection,
   onSave
 }) {
@@ -142,7 +148,7 @@ function StudentRow({
         </View>
         <View style={[styles.chip, placed ? styles.chipOk : styles.chipWarn]}>
           <Text style={[styles.chipText, placed ? styles.chipTextOk : styles.chipTextWarn]} numberOfLines={1}>
-            {placed ? sectionName : 'Needs placement'}
+            {placed ? `${sectionName} · ${student.term || 'No term'}` : 'Needs placement'}
           </Text>
         </View>
       </Pressable>
@@ -155,6 +161,13 @@ function StudentRow({
             options={YEAR_LEVEL_OPTIONS}
             value={placement.yearLevel}
             onSelect={onChangeYear}
+          />
+          <DropdownSelect
+            label="Term / Semester"
+            placeholder="Select term"
+            options={TERM_OPTIONS}
+            value={placement.term}
+            onSelect={onChangeTerm}
           />
           <DropdownSelect
             label="Section"
@@ -172,7 +185,7 @@ function StudentRow({
           <AuthButton
             title={saving ? 'Saving…' : 'Save placement'}
             onPress={onSave}
-            disabled={saving || !dirty || !placement.yearLevel || !placement.sectionId}
+            disabled={saving || !dirty || !placement.yearLevel || !placement.term || !placement.sectionId}
           />
         </View>
       ) : null}
@@ -209,8 +222,9 @@ export default function PcStudentsScreen() {
       setPlacements((current) =>
         validStudents.reduce((result, student) => ({
           ...result,
-          [student.id]: current?.[student.id] || {
+          [student.id]: {
             yearLevel: student.yearLevel || '',
+            term: student.term || '',
             sectionId: student.sectionId || ''
           }
         }), {})
@@ -236,7 +250,7 @@ export default function PcStudentsScreen() {
     setMessage('');
     setSavingId(studentId);
     try {
-      await apiUpdateProgramChairStudentPlacement(token, studentId, placement.yearLevel, placement.sectionId);
+      await apiUpdateProgramChairStudentPlacement(token, studentId, placement.yearLevel, placement.term, placement.sectionId);
       setMessage('Student placement updated.');
       setExpandedId(null);
       await loadData();
@@ -289,9 +303,10 @@ export default function PcStudentsScreen() {
   const isWide = width >= 900;
 
   const renderStudent = (student) => {
-    const placement = placements[student.id] || { yearLevel: '', sectionId: '' };
+    const placement = placements[student.id] || { yearLevel: '', term: '', sectionId: '' };
     const dirty =
       placement.yearLevel !== (student.yearLevel || '') ||
+      placement.term !== (student.term || '') ||
       placement.sectionId !== (student.sectionId || '');
     return (
       <StudentRow
@@ -306,6 +321,7 @@ export default function PcStudentsScreen() {
         isWide={isWide}
         onToggle={() => setExpandedId((current) => (current === student.id ? null : student.id))}
         onChangeYear={(value) => setPlacementField(student.id, { yearLevel: value, sectionId: '' })}
+        onChangeTerm={(value) => setPlacementField(student.id, { term: value })}
         onChangeSection={(value) => setPlacementField(student.id, { sectionId: value })}
         onSave={() => updatePlacement(student.id)}
       />
@@ -370,6 +386,13 @@ export default function PcStudentsScreen() {
             <Ionicons name="close-circle" size={18} color={COLORS.faint} />
           </Pressable>
         ) : null}
+      </View>
+
+      <View style={styles.tableHeader}>
+        <Text style={[styles.tableHeaderText, styles.tableStudentColumn]}>Student</Text>
+        <Text style={styles.tableHeaderText}>Year level</Text>
+        <Text style={styles.tableHeaderText}>Term / semester</Text>
+        <Text style={styles.tableHeaderText}>Section</Text>
       </View>
 
       {error ? <Banner tone="error" onDismiss={() => setError('')}>{error}</Banner> : null}
@@ -519,6 +542,18 @@ const styles = StyleSheet.create({
     marginBottom: 14
   },
   search: { flex: 1, paddingVertical: 12, fontSize: 15, color: COLORS.ink, outlineStyle: 'none' },
+  tableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.brand,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    gap: 12
+  },
+  tableHeaderText: { flex: 1, color: COLORS.surface, fontSize: 11, fontWeight: '800' },
+  tableStudentColumn: { flex: 2 },
 
   /* Banners */
   banner: {

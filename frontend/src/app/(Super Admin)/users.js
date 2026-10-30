@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +14,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { apiGetAcademicStructure, apiGetUsers, apiUpdateStudentPlacement, apiUpdateUserRole } from '../../api/client';
+import {
+  apiDeleteUser,
+  apiGetAcademicStructure,
+  apiGetUsers,
+  apiUpdateStudentPlacement,
+  apiUpdateUser,
+  apiUpdateUserRole
+} from '../../api/client';
 import AuthInput from '../../components/AuthInput';
 import AuthButton from '../../components/AuthButton';
 import StaffHeader from '../../components/StaffHeader';
@@ -72,6 +81,9 @@ export default function UsersScreen() {
   const [placements, setPlacements] = useState({});
   const [openPlacements, setOpenPlacements] = useState({});
   const [query, setQuery] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ firstName: '', middleName: '', lastName: '', email: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const loadUsers = useCallback(async () => {
     if (!token) return;
@@ -129,6 +141,54 @@ export default function UsersScreen() {
       setMessage('Student placement updated.');
     } catch (err) {
       setError(err.message || 'Failed to update student placement.');
+    }
+  };
+
+  const startEdit = (listedUser) => {
+    setEditingId(listedUser.id);
+    setEditForm({
+      firstName: listedUser.firstName || '',
+      middleName: listedUser.middleName || '',
+      lastName: listedUser.lastName || '',
+      email: listedUser.email || ''
+    });
+    setError('');
+    setMessage('');
+  };
+
+  const saveEdit = async (userId) => {
+    setSavingEdit(true);
+    setError('');
+    try {
+      const updatedUser = await apiUpdateUser(token, userId, editForm);
+      setUsers((currentUsers) => currentUsers.map((item) => item.id === userId ? updatedUser : item));
+      setEditingId(null);
+      setMessage('User updated successfully.');
+    } catch (err) {
+      setError(err.message || 'Failed to update user.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const removeUser = (listedUser) => {
+    const action = async () => {
+      setError('');
+      try {
+        await apiDeleteUser(token, listedUser.id);
+        setUsers((currentUsers) => currentUsers.filter((item) => item.id !== listedUser.id));
+        setMessage('User deleted successfully.');
+      } catch (err) {
+        setError(err.message || 'Failed to delete user.');
+      }
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete ${listedUser.name || listedUser.email}? This cannot be undone.`)) action();
+    } else {
+      Alert.alert('Delete user', `Delete ${listedUser.name || listedUser.email}? This cannot be undone.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: action }
+      ]);
     }
   };
 
@@ -217,7 +277,28 @@ export default function UsersScreen() {
                     <Text style={styles.name} numberOfLines={1}>{listedUser.name}</Text>
                     <Text style={styles.email} numberOfLines={1}>{listedUser.email}</Text>
                   </View>
+                  <View style={styles.userActions}>
+                    <TouchableOpacity onPress={() => startEdit(listedUser)} style={styles.iconButton} accessibilityLabel={`Edit ${listedUser.name}`}>
+                      <Ionicons name="create-outline" size={18} color={COLORS.brand} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => removeUser(listedUser)} style={styles.iconButton} accessibilityLabel={`Delete ${listedUser.name}`}>
+                      <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
+
+                {editingId === listedUser.id ? (
+                  <View style={styles.editBox}>
+                    <AuthInput label="First Name" value={editForm.firstName} onChangeText={(value) => setEditForm((current) => ({ ...current, firstName: value }))} />
+                    <AuthInput label="Middle Name" value={editForm.middleName} onChangeText={(value) => setEditForm((current) => ({ ...current, middleName: value }))} />
+                    <AuthInput label="Last Name" value={editForm.lastName} onChangeText={(value) => setEditForm((current) => ({ ...current, lastName: value }))} />
+                    <AuthInput label="TUP Email" value={editForm.email} onChangeText={(value) => setEditForm((current) => ({ ...current, email: value }))} autoCapitalize="none" keyboardType="email-address" />
+                    <View style={styles.editButtons}>
+                      <AuthButton title={savingEdit ? 'Saving...' : 'Save User'} onPress={() => saveEdit(listedUser.id)} disabled={savingEdit} />
+                      <AuthButton title="Cancel" variant="outline" onPress={() => setEditingId(null)} disabled={savingEdit} />
+                    </View>
+                  </View>
+                ) : null}
 
                 <Text style={styles.fieldLabel}>ROLE</Text>
                 <View style={styles.roles}>
@@ -394,6 +475,17 @@ const styles = StyleSheet.create({
   },
   userCardWide: { width: '49%' },
   userTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  userActions: { flexDirection: 'row', gap: 6 },
+  iconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.paper,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   avatar: {
     width: 44,
     height: 44,
@@ -408,6 +500,15 @@ const styles = StyleSheet.create({
   userInfo: { flex: 1, minWidth: 0 },
   name: { fontSize: 16, fontWeight: '800', color: COLORS.ink },
   email: { fontSize: 13, color: COLORS.muted, marginTop: 2 },
+  editBox: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.paper,
+    borderWidth: 2,
+    borderColor: COLORS.goldSoft
+  },
+  editButtons: { gap: 8, marginTop: 4 },
 
   fieldLabel: {
     fontSize: 11,
