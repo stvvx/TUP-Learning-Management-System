@@ -574,7 +574,7 @@ function TeachingSubjectsScreen() {
 function StudentSubjectsScreen() {
   const { user, token, isLoading } = useAuth();
   const { width } = useWindowDimensions();
-  const [data, setData] = useState({ yearLevel: null, subjects: [], terms: [] });
+  const [data, setData] = useState({ yearLevel: null, currentTerm: null, subjects: [], terms: [] });
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -586,7 +586,7 @@ function StudentSubjectsScreen() {
     try {
       const result = await apiGetStudentSubjects(token);
       setData(result);
-      setSelectedTerm((current) => current && result.terms.includes(current) ? current : result.terms[0] || null);
+      setSelectedTerm(result.currentTerm || result.terms[0] || null);
     } catch (err) {
       setError(err.message || 'Failed to load available subjects.');
     } finally {
@@ -601,12 +601,14 @@ function StudentSubjectsScreen() {
     }
   }, [loadData, token, user?.role]);
 
+  const currentTerm = data.currentTerm || selectedTerm;
+
   const enroll = async (subjectId) => {
     setError('');
     setMessage('');
     setIsSaving(true);
     try {
-      await apiEnrollSubject(token, subjectId, selectedTerm);
+      await apiEnrollSubject(token, subjectId, currentTerm);
       setMessage('Subject enrolled successfully.');
       await loadData();
     } catch (err) {
@@ -617,10 +619,9 @@ function StudentSubjectsScreen() {
   };
 
   if (isLoading || user?.role !== 'student') return null;
-  const visibleSubjects = data.subjects.filter((subject) => subject.term === selectedTerm);
+  const visibleSubjects = data.subjects.filter((subject) => subject.term === currentTerm);
   const enrolledCount = data.subjects.filter((subject) => subject.enrolled).length;
   const isWide = width >= 900;
-  const termTabs = [...data.terms].sort((a, b) => optionIndex(TERM_OPTIONS, a) - optionIndex(TERM_OPTIONS, b));
 
   return (
     <ScrollView
@@ -652,32 +653,16 @@ function StudentSubjectsScreen() {
               <Ionicons name="ribbon" size={14} color={COLORS.brandDeep} />
               <Text style={styles.yearBadgeText}>{data.yearLevel}</Text>
             </View>
-            <Text style={styles.infoText}>
-              Pick a semester, then enroll in the subjects you need.
-            </Text>
           </View>
 
-          {/* Semester tabs (replaces the dropdown) */}
+          {/* Students only see subjects for the active academic term. */}
           <View style={styles.tabs}>
-            {termTabs.map((term) => {
-              const active = term === selectedTerm;
-              const count = data.subjects.filter((subject) => subject.term === term).length;
-              return (
-                <TouchableOpacity
-                  key={term}
-                  style={[styles.tab, active && styles.tabActive]}
-                  onPress={() => setSelectedTerm(term)}
-                  activeOpacity={0.85}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                >
-                  <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>{term}</Text>
-                  <View style={[styles.tabCount, active && styles.tabCountActive]}>
-                    <Text style={[styles.tabCountText, active && styles.tabCountTextActive]}>{count}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            <View style={[styles.tab, styles.tabActive]}>
+              <Text style={[styles.tabText, styles.tabTextActive]} numberOfLines={1}>{currentTerm || 'Current Term'}</Text>
+              <View style={[styles.tabCount, styles.tabCountActive]}>
+                <Text style={[styles.tabCountText, styles.tabCountTextActive]}>{data.subjects.length}</Text>
+              </View>
+            </View>
           </View>
 
           {visibleSubjects.length === 0 ? (

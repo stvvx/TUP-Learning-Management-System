@@ -741,13 +741,19 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
     if (role === 'student') {
       const studentId = new ObjectId(req.user.userId);
       const profile = await studentsCollection.findOne({ userId: studentId });
+      const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
+      const currentSubjectQuery = {
+        yearLevel: profile?.yearLevel,
+        schoolYear: academicSettings?.schoolYear,
+        term: academicSettings?.term
+      };
       const availableSubjects = profile?.yearLevel
-        ? await subjectsCollection.find({ yearLevel: profile.yearLevel }).toArray()
+        ? await subjectsCollection.find(currentSubjectQuery).toArray()
         : [];
       const studentEnrollments = await enrollmentsCollection.find({ studentId }).toArray();
       const enrolledSubjectIds = studentEnrollments.map((item) => item.subjectId);
       const enrolledSubjects = enrolledSubjectIds.length
-        ? await subjectsCollection.find({ _id: { $in: enrolledSubjectIds } }).toArray()
+        ? await subjectsCollection.find({ ...currentSubjectQuery, _id: { $in: enrolledSubjectIds } }).toArray()
         : [];
       const terms = ['First Term', 'Second Term', 'Third Term'].map((term) => ({
         label: term.replace(' Term', ''),
@@ -1077,7 +1083,11 @@ app.get('/api/student/subjects', authenticateToken, requireStudent, async (req, 
     const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
     const [subjects, enrollments] = await Promise.all([
       subjectsCollection
-        .find({ yearLevel: studentProfile.yearLevel, schoolYear: academicSettings?.schoolYear })
+        .find({
+          yearLevel: studentProfile.yearLevel,
+          schoolYear: academicSettings?.schoolYear,
+          term: academicSettings?.term
+        })
         .sort({ term: 1, code: 1 })
         .toArray(),
       enrollmentsCollection
@@ -1097,6 +1107,7 @@ app.get('/api/student/subjects', authenticateToken, requireStudent, async (req, 
     return res.json({
       yearLevel: studentProfile.yearLevel,
       subjects: serializedSubjects,
+      currentTerm: academicSettings?.term || null,
       terms: [...new Set(serializedSubjects.map((subject) => subject.term))]
     });
   } catch (error) {
@@ -1126,6 +1137,9 @@ app.post('/api/student/enrollments', authenticateToken, requireStudent, async (r
     }
     if (!academicSettings?.schoolYear || subject.schoolYear !== academicSettings.schoolYear) {
       return res.status(400).json({ error: 'This subject is not available for the current school year.' });
+    }
+    if (subject.term !== academicSettings.term) {
+      return res.status(400).json({ error: 'You can only enroll in subjects for the current semester.' });
     }
     if (subject.yearLevel !== studentProfile.yearLevel) {
       return res.status(400).json({ error: 'You can only enroll in subjects for your year level.' });
@@ -1718,8 +1732,17 @@ app.delete('/api/teaching/lessons/:lessonId', authenticateToken, requireTeaching
 app.get('/api/student/lessons', authenticateToken, requireStudent, async (req, res) => {
   try {
     const studentId = new ObjectId(req.user.userId);
+    const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
     const enrollments = await enrollmentsCollection.find({ studentId }).toArray();
-    const subjectIds = enrollments.map((enrollment) => enrollment.subjectId);
+    const enrolledSubjectIds = enrollments.map((enrollment) => enrollment.subjectId);
+    const currentSubjects = enrolledSubjectIds.length
+      ? await subjectsCollection.find({
+          _id: { $in: enrolledSubjectIds },
+          schoolYear: academicSettings?.schoolYear,
+          term: academicSettings?.term
+        }, { projection: { _id: 1 } }).toArray()
+      : [];
+    const subjectIds = currentSubjects.map((subject) => subject._id);
     const lessons = subjectIds.length
       ? await lessonsCollection.find({ subjectId: { $in: subjectIds } }).sort({ updatedAt: -1 }).toArray()
       : [];
@@ -1791,17 +1814,27 @@ app.get('/api/student/quizzes', authenticateToken, requireStudent, async (req, r
     const rawUserId = req.user.userId;
     const studentIdObj = ObjectId.isValid(rawUserId) ? new ObjectId(rawUserId) : null;
     const studentIdFilters = studentIdObj ? [studentIdObj, rawUserId.toString()] : [rawUserId.toString()];
+    const academicSettings = await academicSettingsCollection.findOne({ _id: 'current' });
 
     const enrollments = await enrollmentsCollection.find({
       studentId: { $in: studentIdFilters }
     }).toArray();
 
+    const enrolledSubjectIds = enrollments
+      .filter((enrollment) => enrollment.subjectId)
+      .map((enrollment) => ObjectId.isValid(enrollment.subjectId)
+        ? new ObjectId(enrollment.subjectId)
+        : enrollment.subjectId);
+    const currentSubjects = enrolledSubjectIds.length
+      ? await subjectsCollection.find({
+          _id: { $in: enrolledSubjectIds },
+          schoolYear: academicSettings?.schoolYear,
+          term: academicSettings?.term
+        }).toArray()
+      : [];
     const subjectIdList = [];
-    enrollments.forEach((e) => {
-      if (e.subjectId) {
-        if (ObjectId.isValid(e.subjectId)) subjectIdList.push(new ObjectId(e.subjectId));
-        subjectIdList.push(e.subjectId.toString());
-      }
+    currentSubjects.forEach((subject) => {
+      subjectIdList.push(subject._id, subject._id.toString());
     });
 
     const quizzes = subjectIdList.length

@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-export default function DashboardBarChart({ title, data, color = '#2563EB' }) {
+export default function DashboardBarChart({ title, data, color = '#7B1113' }) {
   const maxValue = Math.max(...data.map((item) => item.value), 1);
 
   return (
@@ -23,12 +23,12 @@ export default function DashboardBarChart({ title, data, color = '#2563EB' }) {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
-  title: { fontSize: 16, fontWeight: '700', color: '#0F172A', marginBottom: 16 },
+  card: { backgroundColor: '#FFF9EE', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#EBC9A0', marginBottom: 16 },
+  title: { fontSize: 16, fontWeight: '700', color: '#4A0A0C', marginBottom: 16 },
   chart: { height: 160, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', gap: 8 },
   column: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end' },
-  value: { fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 5 },
-  barTrack: { width: '70%', height: 105, justifyContent: 'flex-end', backgroundColor: '#F1F5F9', borderRadius: 8, overflow: 'hidden' },
+  value: { fontSize: 12, fontWeight: '700', color: '#7B1113', marginBottom: 5 },
+  barTrack: { width: '70%', height: 105, justifyContent: 'flex-end', backgroundColor: '#F6E4E4', borderRadius: 8, overflow: 'hidden' },
   bar: { width: '100%', borderRadius: 8 },
-  label: { fontSize: 10, color: '#64748B', textAlign: 'center', marginTop: 7 }
+  label: { fontSize: 10, color: '#6E6165', textAlign: 'center', marginTop: 7 }
 });
