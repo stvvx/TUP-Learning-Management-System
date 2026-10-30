@@ -349,6 +349,13 @@ export async function apiGetTeachingSubjects(token) {
   return result.subjects;
 }
 
+export async function apiGetTeachingSubjectStudents(token, subjectId) {
+  const result = await request(`/api/teaching/subjects/${subjectId}/students`, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return result.students;
+}
+
 export async function apiGetTeachingLessons(token) {
   const result = await request('/api/teaching/lessons', {
     headers: { Authorization: 'Bearer ' + token }

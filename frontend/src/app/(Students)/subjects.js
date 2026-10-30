@@ -24,6 +24,7 @@ import {
   apiEnrollSubject,
   apiGetProgramChairData,
   apiGetTeachingSubjects,
+  apiGetTeachingSubjectStudents,
   apiGetStudentSubjects,
   apiUpdateSubject
 } from '../../api/client';
@@ -263,6 +264,63 @@ function SubjectCard({ subject, chips, onEdit, onDelete }) {
         ) : null}
       </View>
       <Text style={styles.itemText} numberOfLines={2}>{subject.description}</Text>
+    </View>
+  );
+}
+
+function FacultySubjectCard({ subject, students, isLoadingStudents }) {
+  return (
+    <View style={styles.facultySubjectCard}>
+      <SubjectCard subject={subject} chips={<Chip icon="people-outline">{subject.sectionName}</Chip>} />
+      <View style={styles.rosterHeader}>
+        <View style={styles.rosterTitleRow}>
+          <Ionicons name="people" size={16} color={COLORS.brand} />
+          <Text style={styles.rosterTitle}>Enrolled students</Text>
+        </View>
+        {!isLoadingStudents ? (
+          <View style={styles.rosterCount}>
+            <Text style={styles.rosterCountText}>{students.length}</Text>
+          </View>
+        ) : null}
+      </View>
+      {isLoadingStudents ? (
+        <View style={styles.rosterLoading}>
+          <ActivityIndicator size="small" color={COLORS.brand} />
+          <Text style={styles.rosterMuted}>Loading students…</Text>
+        </View>
+      ) : students.length === 0 ? (
+        <Text style={styles.rosterMuted}>No students are enrolled in this subject yet.</Text>
+      ) : (
+        <View style={styles.rosterTableFrame}>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View style={styles.rosterTableContent}>
+              <View style={styles.rosterTableHeader}>
+                <Text style={[styles.rosterHeaderCell, styles.rosterNumberColumn]}>#</Text>
+                <Text style={[styles.rosterHeaderCell, styles.rosterNameColumn]}>Last Name</Text>
+                <Text style={[styles.rosterHeaderCell, styles.rosterNameColumn]}>First Name</Text>
+                <Text style={[styles.rosterHeaderCell, styles.rosterNameColumn]}>Middle Name</Text>
+              </View>
+              {students.map((student, index) => (
+                <View
+                  key={student.id}
+                  style={[styles.rosterTableRow, index % 2 === 1 && styles.rosterTableRowAlternate]}
+                >
+                  <Text style={[styles.rosterCell, styles.rosterNumberColumn]}>{index + 1}</Text>
+                  <Text style={[styles.rosterCell, styles.rosterNameColumn]} numberOfLines={1}>
+                    {student.lastName || '—'}
+                  </Text>
+                  <Text style={[styles.rosterCell, styles.rosterNameColumn]} numberOfLines={1}>
+                    {student.firstName || '—'}
+                  </Text>
+                  <Text style={[styles.rosterCell, styles.rosterNameColumn]} numberOfLines={1}>
+                    {student.middleName || '—'}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      )}
     </View>
   );
 }
@@ -520,6 +578,8 @@ function TeachingSubjectsScreen() {
   const { token, isLoading } = useAuth();
   const { width } = useWindowDimensions();
   const [subjects, setSubjects] = useState([]);
+  const [studentsBySubject, setStudentsBySubject] = useState({});
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
   const [error, setError] = useState('');
   const [yearFilter, setYearFilter] = useState('all');
   const [termFilter, setTermFilter] = useState('all');
@@ -527,9 +587,30 @@ function TeachingSubjectsScreen() {
 
   useEffect(() => {
     if (!token) return;
-    apiGetTeachingSubjects(token).then(setSubjects).catch((err) => {
-      setError(err.message || 'Failed to load assigned subjects.');
-    });
+    let active = true;
+    const loadingTimer = setTimeout(() => setIsLoadingStudents(true), 0);
+    apiGetTeachingSubjects(token)
+      .then(async (assignedSubjects) => {
+        if (!active) return;
+        setSubjects(assignedSubjects);
+        const rosters = await Promise.all(
+          assignedSubjects.map(async (subject) => [
+            subject.id,
+            await apiGetTeachingSubjectStudents(token, subject.id)
+          ])
+        );
+        if (active) setStudentsBySubject(Object.fromEntries(rosters));
+      })
+      .catch((err) => {
+        if (active) setError(err.message || 'Failed to load assigned subjects.');
+      })
+      .finally(() => {
+        if (active) setIsLoadingStudents(false);
+      });
+    return () => {
+      active = false;
+      clearTimeout(loadingTimer);
+    };
   }, [token]);
 
   const groups = useMemo(() => groupSubjects(subjects, yearFilter, termFilter), [subjects, yearFilter, termFilter]);
@@ -562,7 +643,11 @@ function TeachingSubjectsScreen() {
         isWide={isWide}
         emptyText={subjects.length === 0 ? 'No subjects have been assigned to you yet.' : 'No subjects match these filters.'}
         renderCard={(subject) => (
-          <SubjectCard subject={subject} chips={<Chip icon="people-outline">{subject.sectionName}</Chip>} />
+          <FacultySubjectCard
+            subject={subject}
+            students={studentsBySubject[subject.id] || []}
+            isLoadingStudents={isLoadingStudents}
+          />
         )}
       />
     </ScrollView>
@@ -969,6 +1054,63 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   iconBtnDanger: { backgroundColor: COLORS.dangerSoft, borderColor: COLORS.danger },
+  facultySubjectCard: { gap: 10 },
+  rosterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2
+  },
+  rosterTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rosterTitle: { fontSize: 12, fontWeight: '900', color: COLORS.brandDeep },
+  rosterCount: {
+    minWidth: 24,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 1,
+    borderColor: COLORS.brandLine,
+    alignItems: 'center'
+  },
+  rosterCountText: { fontSize: 11, fontWeight: '900', color: COLORS.brandDeep },
+  rosterLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 },
+  rosterMuted: { fontSize: 12, color: COLORS.muted, paddingHorizontal: 2, paddingVertical: 4 },
+  rosterTableFrame: {
+    width: '100%',
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: COLORS.surface
+  },
+  rosterTableContent: { width: '100%', minWidth: 420 },
+  rosterTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.brandSoft,
+    borderBottomWidth: 1.5,
+    borderBottomColor: COLORS.brandLine
+  },
+  rosterTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 36,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.line
+  },
+  rosterTableRowAlternate: { backgroundColor: COLORS.paper },
+  rosterHeaderCell: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 10,
+    fontWeight: '900',
+    color: COLORS.brandDeep,
+    textTransform: 'uppercase'
+  },
+  rosterCell: { paddingHorizontal: 8, paddingVertical: 8, fontSize: 12, color: COLORS.ink },
+  rosterNumberColumn: { flex: 0.3, minWidth: 38, textAlign: 'center' },
+  rosterNameColumn: { flex: 1, minWidth: 118 },
 
   /* Student: info strip + semester tabs */
   infoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
