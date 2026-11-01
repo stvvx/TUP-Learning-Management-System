@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Technological University of the Philippines - Taguig",
-    "slug": "tup-taguig-lms",
+    "name": "TUPortal",
+    "slug": "tuportal",
     "scheme": "itproflms",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -21,7 +21,8 @@
       "package": "com.tuprosario.tuptaguiglms"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "output": "static"
     },
     "plugins": [
       "expo-font",
