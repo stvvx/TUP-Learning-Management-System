@@ -28,6 +28,16 @@
       "expo-font",
       "expo-router",
       "expo-sharing"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "bbd240a9-9683-4c79-8f22-1f3491276565"
+      }
+    }
   }
 }
